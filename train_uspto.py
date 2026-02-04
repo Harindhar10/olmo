@@ -21,7 +21,6 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 # ------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------
-# HF_TOKEN = "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"
 
 MODEL_ID = "harindhar10/OLMo-7B-ZINC20-10k" 
 
