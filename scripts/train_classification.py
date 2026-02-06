@@ -92,7 +92,7 @@ def parse_args():
     parser.add_argument("--max_len", type=int, default=128, help="Max sequence length")
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size per GPU")
     parser.add_argument(
-        "--gradient_accum", type=int, default=24, help="Gradient accumulation steps"
+        "--gradient_accum", type=int, default=4, help="Gradient accumulation steps"
     )
     parser.add_argument("--lr", type=float, default=2e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
@@ -242,7 +242,7 @@ def main():
         accelerator="gpu",
         devices=-1,
         strategy="ddp",
-        precision="bf16-mixed",
+        precision="16-mixed",
         gradient_clip_val=args.max_grad_norm,
         accumulate_grad_batches=args.gradient_accum,
         callbacks=callbacks,
