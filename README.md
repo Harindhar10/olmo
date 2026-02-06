@@ -11,7 +11,7 @@ Minimal library for molecular property prediction with OLMo-7B.
 
 ## Training strategies
 
-- **For efficient Training**: QLoRA (4-bit) or full finetuning
+- **QLoRA (4-bit)** or full finetuning
 - **Multi-GPU**: DDP support out of the box
 
 ## Installation
