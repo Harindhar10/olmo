@@ -246,7 +246,7 @@ def main():
         gradient_clip_val=args.max_grad_norm,
         accumulate_grad_batches=args.gradient_accum,
         callbacks=callbacks,
-        logger=False,
+        logger=True,
         log_every_n_steps=10,
         deterministic=True,
         enable_progress_bar=True,
