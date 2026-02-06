@@ -2,15 +2,16 @@
 
 Minimal library for molecular property prediction with OLMo-7B.
 
-Inspired by [nanochat](https://github.com/karpathy/nanochat) - explicit over implicit, minimal abstraction.
-
-## Features
+## Datasets supported
 
 - **Classification**: Binary, multilabel, multitask (BBBP, BACE, HIV, ClinTox, SIDER, Tox21)
 - **Regression**: ESOL, FreeSolv, Lipophilicity, Clearance
 - **Pretraining**: Causal LM on ZINC20, PubChem
 - **Instruction Tuning**: USPTO reaction prediction
-- **Efficient Training**: QLoRA (4-bit) or full finetuning
+
+## Training strategies
+
+- **For efficient Training**: QLoRA (4-bit) or full finetuning
 - **Multi-GPU**: DDP support out of the box
 
 ## Installation
@@ -25,13 +26,11 @@ pip install -e .
 
 ```bash
 # Prepare a specific dataset (uses DeepChem scaffold splits)
-python scripts/prepare_data.py --datasets bbbp
+!python3 scripts/prepare_data.py \
+        --split_type 'deepchem' \
+        --datasets 'bbbp' \
+        --data_dir olmo/datasets/deepchem_splits
 
-# Prepare all registered datasets
-python scripts/prepare_data.py --all
-
-# Custom SMILES length filter
-python scripts/prepare_data.py --datasets bbbp bace hiv --max_smiles_len 150
 ```
 
 ### Step 2: Train
@@ -39,14 +38,9 @@ python scripts/prepare_data.py --datasets bbbp bace hiv --max_smiles_len 150
 ### Classification
 
 ```bash
-# Single GPU
-python scripts/train_classification.py --task bbbp --use_qlora
 
-# Multi-GPU
-torchrun --nproc_per_node=4 scripts/train_classification.py --task hiv
+!python scripts/train_classification.py --task 'bbbp' --use_lm_head --epochs 1 --data_dir datasets/deepchem_splits
 
-# LM head approach (Yes/No prediction)
-python scripts/train_classification.py --task bace --use_lm_head
 ```
 
 ### Regression
@@ -59,15 +53,15 @@ python scripts/train_regression.py --task esol
 ### Pretraining
 
 ```bash
-torchrun --nproc_per_node=4 scripts/pretrain.py \
+python scripts/pretrain.py \
     --dataset zinc20 \
-    --num_samples 1000000
+    --num_samples 10000
 ```
 
 ### Instruction Tuning
 
 ```bash
-torchrun --nproc_per_node=4 scripts/train_instruction.py \
+python \
     --dataset OpenMol/USPTO_1k_TPL-SFT \
     --num_samples 10000
 ```
@@ -117,16 +111,6 @@ olmochem/
 └── speedrun.sh               # Pipeline documentation
 ```
 
-## Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| Task registry | Easy to add new datasets |
-| QLoRA default | Memory efficient |
-| Two classification modes | Classification head vs LM head (Yes/No) |
-| Rank-aware utilities | Clean DDP support |
-| No config files | CLI args with sensible defaults |
-
 ## Data Preparation
 
 `prepare_data.py` uses DeepChem to download datasets and create scaffold splits:
@@ -135,11 +119,11 @@ olmochem/
 python scripts/prepare_data.py --datasets bbbp bace hiv
 ```
 
-This creates CSVs in `splits/{task}/train.csv`, `valid.csv`, `test.csv` with:
+This creates CSVs in `datasets/deepchem_splits/{task}/train.csv`, `datasets/deepchem_splits/valid.csv`, `datasets/deepchem_splits/test.csv` with:
 - `smiles`: SMILES string column
 - Task-specific label columns (see task configs)
 
-Requires `deepchem` (`pip install deepchem`).
+Requires `deepchem` (`pip install --pre deepchem`).
 
 ## License
 
