@@ -124,18 +124,16 @@ def main():
     argparser.add_argument('--split_type',
                         type=str,
                         help='type of the splits to use for the datasets : molformer/deepchem',
-                        default='molformer')
+                        default='deepchem')
     argparser.add_argument(
         '--datasets',
         type=str,
         help='comma-separated list of datasets to featurize',
-        default='bbbp,bace,clintox,hiv,tox21,sider')
-    argparser.add_argument('--featurizers',
-                           type=str,
-                           help='comma-separated list of featurizers to featurize the datasets')
+        default='bbbp,bace_classification')
     argparser.add_argument('--data_dir',
                            type=str,
-                           help='data dir of stored splits in csv format')
+                           help='data dir of stored splits in csv format',
+                           default='datasets/deepchem_splits')
 
     args = argparser.parse_args()
 
