@@ -75,10 +75,12 @@ Adding a new dataset is simple:
 from .base import TaskConfig, register_task
 
 register_task(TaskConfig(
-    name="my_dataset",
-    task_columns=["activity"],
-    prompt="Is this molecule active?",
+    name="clintox",
+    task_columns=["CT_TOX"],
+    prompt="Is this molecule clinically toxic?",
     task_type="binary",
+    monitor_metric="val/roc_auc",
+    monitor_mode="max",
 ))
 ```
 
