@@ -63,7 +63,6 @@ def parse_args():
     )
     parser.add_argument(
         "--use_qlora",
-        action="store_true",
         default=True,
         help="Use 4-bit QLoRA",
     )

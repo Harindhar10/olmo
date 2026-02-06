@@ -133,7 +133,7 @@ def main():
     argparser.add_argument('--data_dir',
                            type=str,
                            help='data dir of stored splits in csv format',
-                           default='datasets/deepchem_splits')
+                           default='olmo/datasets/deepchem_splits')
 
     args = argparser.parse_args()
 

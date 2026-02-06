@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument(
         "--data_dir",
         type=str,
-        default="./../datasets/deepchem_splits",
+        default="olmo/datasets/deepchem_splits",
         help="Directory containing dataset splits",
     )
 
@@ -70,7 +70,6 @@ def parse_args():
     )
     parser.add_argument(
         "--use_qlora",
-        action="store_true",
         default=True,
         help="Use 4-bit quantized LoRA",
     )
