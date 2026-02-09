@@ -252,8 +252,6 @@ def main():
             mlflow.log_metric(f"final_{key.replace('/', '_')}", float(value))
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-        if checkpoint_callback.best_model_path:
-            mlflow.log_artifact(checkpoint_callback.best_model_path)
 
         mlflow.end_run()
         print0(f"\nDone! Best RMSE: {checkpoint_callback.best_model_score:.4f}")

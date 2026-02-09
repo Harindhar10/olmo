@@ -255,7 +255,7 @@ def main():
 
     # Train
     print0("Starting training...")
-    print0(f"Model approach: {'LM Head (Yes/No)' if args.use_lm_head else 'Classification Head'}")
+    print0(f"Model approach: {'LM Head (Yes/No Token)' if args.use_lm_head else 'Classification Head'}")
     print0(f"LoRA: {use_qlora}")
     trainer.fit(model, train_loader, val_loader)
 
@@ -270,8 +270,6 @@ def main():
             mlflow.log_metric(metric_name, float(value))
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-        if checkpoint_callback.best_model_path:
-            mlflow.log_artifact(checkpoint_callback.best_model_path)
 
         mlflow.end_run()
         print0(f"\nDone! Best {task_config.monitor_metric}: {checkpoint_callback.best_model_score:.4f}")
