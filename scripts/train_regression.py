@@ -81,9 +81,9 @@ def parse_args():
 
     # ---- Training ----
     parser.add_argument("--max_len", type=int, default=128, help="Max sequence length")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size per GPU")
+    parser.add_argument("--batch_size", type=int, default=4, help="Batch size per GPU")
     parser.add_argument(
-        "--gradient_accum", type=int, default=2, help="Gradient accumulation steps"
+        "--gradient_accum", type=int, default=4, help="Gradient accumulation steps"
     )
     parser.add_argument("--lr", type=float, default=2e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
