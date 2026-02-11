@@ -40,10 +40,10 @@ register_task(TaskConfig(
 
 register_task(TaskConfig(
     name="freesolv",
-    task_columns=["expt"],
+    task_columns=["y"],
     prompt="Predict hydration free energy from SMILES",
     task_type="regression",
-    target_column="expt",
+    target_column="y",
     normalize=True,
     monitor_metric="val/rmse",
     monitor_mode="min",
