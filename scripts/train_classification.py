@@ -4,19 +4,23 @@ Classification finetuning on MoleculeNet datasets.
 
 Examples:
     # Single GPU with QLoRA
-    python scripts/train_classification.py --task bbbp --use_qlora
+    python scripts/train_classification.py --tasks bbbp --use_qlora
+
+    # Multiple tasks (runs sequentially)
+    python scripts/train_classification.py --tasks bbbp bace hiv
 
     # Multi-GPU
-    torchrun --nproc_per_node=4 scripts/train_classification.py --task hiv
+    torchrun --nproc_per_node=4 scripts/train_classification.py --tasks hiv
 
     # LM head approach (Yes/No prediction)
-    python scripts/train_classification.py --task bace --use_lm_head
+    python scripts/train_classification.py --tasks bace --use_lm_head
 
     # Full finetuning (no LoRA)
-    python scripts/train_classification.py --task hiv --full_finetune --lr 1e-5
+    python scripts/train_classification.py --tasks hiv --full_finetune --lr 1e-5
 """
 
 import argparse
+import gc
 import os
 import sys
 from datetime import datetime
@@ -27,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import mlflow
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -52,11 +57,12 @@ def parse_args():
 
     # ---- Task Selection ----
     parser.add_argument(
-        "--task",
+        "--tasks",
         type=str,
+        nargs="+",
         required=True,
         choices=list_tasks(),
-        help="MoleculeNet task name",
+        help="MoleculeNet task name(s)",
     )
     parser.add_argument(
         "--data_dir",
@@ -125,14 +131,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    set_seed(args.seed)
-    pl.seed_everything(args.seed, workers=True)
-
+def run_task(args, task_name):
+    """Run training and evaluation for a single task."""
     # Get task config
-    task_config = get_task(args.task)
-    print0(f"Task: {args.task} ({task_config.task_type})")
+    task_config = get_task(task_name)
+    print0(f"\nTask: {task_name} ({task_config.task_type})")
     print0(f"Columns: {task_config.task_columns[:3]}{'...' if len(task_config.task_columns) > 3 else ''}")
 
     # Tokenizer
@@ -140,9 +143,9 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load data
-    train_df = pd.read_csv(f"{args.data_dir}/{args.task}/train.csv")
-    val_df = pd.read_csv(f"{args.data_dir}/{args.task}/valid.csv")
-    test_df = pd.read_csv(f"{args.data_dir}/{args.task}/test.csv")
+    train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")
+    val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
+    test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
     # Create datasets
     train_ds = MoleculeDataset(
@@ -212,7 +215,7 @@ def main():
             verbose=True,
         ),
         ModelCheckpoint(
-            dirpath=f"{args.output_dir}/{args.task}/{timestamp}",
+            dirpath=f"{args.output_dir}/{task_name}/{timestamp}",
             filename="best",
             monitor=task_config.monitor_metric,
             mode=task_config.monitor_mode,
@@ -227,10 +230,11 @@ def main():
     # MLflow (rank 0 only)
     if is_main_process():
         mlflow.set_tracking_uri(args.mlflow_uri)
-        mlflow.set_experiment(f"olmochem-{args.task}")
-        mlflow.start_run(run_name=f"{args.task}_{timestamp}")
+        mlflow.set_experiment(f"olmochem-{task_name}")
+        mlflow.start_run(run_name=f"{task_name}_{timestamp}")
         mlflow.log_params(vars(args))
         mlflow.log_params({
+            "task": task_name,
             "task_type": task_config.task_type,
             "num_tasks": task_config.num_tasks,
             "effective_batch_size": args.batch_size * args.gradient_accum,
@@ -273,6 +277,22 @@ def main():
 
         mlflow.end_run()
         print0(f"\nDone! Best {task_config.monitor_metric}: {checkpoint_callback.best_model_score:.4f}")
+
+    # Cleanup GPU memory for next task
+    del model, trainer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def main():
+    args = parse_args()
+    set_seed(args.seed)
+    pl.seed_everything(args.seed, workers=True)
+
+    print0(f"Running {len(args.tasks)} task(s): {', '.join(args.tasks)}")
+    for task_name in args.tasks:
+        run_task(args, task_name)
 
 
 if __name__ == "__main__":
