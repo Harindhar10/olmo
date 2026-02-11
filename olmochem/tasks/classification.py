@@ -21,7 +21,7 @@ register_task(TaskConfig(
 ))
 
 register_task(TaskConfig(
-    name="bace",
+    name="bace_classification",
     task_columns=["Class"],
     prompt="Is this molecule a BACE-1 inhibitor?",
     task_type="binary",

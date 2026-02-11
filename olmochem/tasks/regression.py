@@ -50,11 +50,22 @@ register_task(TaskConfig(
 ))
 
 register_task(TaskConfig(
-    name="lipophilicity",
+    name="lipo",
     task_columns=["exp"],
     prompt="Predict lipophilicity from SMILES",
     task_type="regression",
     target_column="exp",
+    normalize=True,
+    monitor_metric="val/rmse",
+    monitor_mode="min",
+))
+
+register_task(TaskConfig(
+    name="bace_regression",
+    task_columns=["pIC50"],
+    prompt="What is the BACE-1 inhibition strength (pIC50) of this molecule?",
+    task_type="regression",
+    target_column="pIC50",
     normalize=True,
     monitor_metric="val/rmse",
     monitor_mode="min",
