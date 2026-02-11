@@ -223,9 +223,6 @@ olmochem/
 │   ├── train_regression.py
 │   ├── pretrain.py
 │   └── train_instruction.py
-├── later/
-│   ├── speedrun.sh            # End-to-end pipeline reference script
-│   └── setup.py               # Package metadata
 ├── requirements.txt
 └── README.md
 ```
