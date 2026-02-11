@@ -63,7 +63,7 @@ def parse_args():
     parser.add_argument(
         "--num_samples",
         type=int,
-        default=None,
+        default=10000,
         help="Number of samples to use (None = all)",
     )
 
@@ -112,11 +112,11 @@ def load_smiles_data(args):
     """Load SMILES dataset based on args."""
     if args.dataset == "zinc20":
         # ZINC20 dataset from HuggingFace
-        dataset = load_dataset("zpn/zinc20", split="train", streaming=True, trust_remote_code=True)
+        dataset = load_dataset("zpn/zinc20", split="train", streaming=True, trust_remote_code=True).take(args.num_samples)
         smiles_col = "smiles"
     elif args.dataset == "pubchem":
         # PubChem dataset
-        dataset = load_dataset("sagawa/pubchem-10m-smiles", split="train", streaming=True, trust_remote_code=True)
+        dataset = load_dataset("sagawa/pubchem-10m-smiles", split="train", streaming=True, trust_remote_code=True).take(args.num_samples)
         smiles_col = "smiles"
     elif args.dataset == "custom":
         if args.dataset_path is None:
