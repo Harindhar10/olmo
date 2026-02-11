@@ -14,7 +14,7 @@ from typing import Optional, Dict, List, Any
 
 class MoleculeDataset(Dataset):
     """
-    Universal dataset for molecular property prediction.
+    Dataset class for MoleculeNet datasets.
 
     Handles binary, multilabel, multitask classification and regression.
     Supports both classification head and LM head prompt formats.
