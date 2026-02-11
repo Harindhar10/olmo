@@ -112,16 +112,16 @@ def load_smiles_data(args):
     """Load SMILES dataset based on args."""
     if args.dataset == "zinc20":
         # ZINC20 dataset from HuggingFace
-        dataset = load_dataset("zpn/zinc20", split="train", streaming=True)
+        dataset = load_dataset("zpn/zinc20", split="train", streaming=True, trust_remote_code=True)
         smiles_col = "smiles"
     elif args.dataset == "pubchem":
         # PubChem dataset
-        dataset = load_dataset("sagawa/pubchem-10m-smiles", split="train", streaming=True)
+        dataset = load_dataset("sagawa/pubchem-10m-smiles", split="train", streaming=True, trust_remote_code=True)
         smiles_col = "smiles"
     elif args.dataset == "custom":
         if args.dataset_path is None:
             raise ValueError("--dataset_path required for custom dataset")
-        dataset = load_dataset(args.dataset_path, split="train", streaming=True)
+        dataset = load_dataset(args.dataset_path, split="train", streaming=True, trust_remote_code=True)
         smiles_col = args.smiles_column
     else:
         raise ValueError(f"Unknown dataset: {args.dataset}")
