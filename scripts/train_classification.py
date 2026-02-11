@@ -3,14 +3,11 @@
 Classification finetuning on MoleculeNet datasets.
 
 Examples:
-    # Single GPU with QLoRA
+    # Single/Multi GPU with QLoRA
     python scripts/train_classification.py --tasks bbbp --use_qlora
 
     # Multiple tasks (runs sequentially)
     python scripts/train_classification.py --tasks bbbp bace hiv
-
-    # Multi-GPU
-    torchrun --nproc_per_node=4 scripts/train_classification.py --tasks hiv
 
     # LM head approach (Yes/No prediction)
     python scripts/train_classification.py --tasks bace --use_lm_head

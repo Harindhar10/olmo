@@ -3,14 +3,11 @@
 Regression finetuning on MoleculeNet datasets.
 
 Examples:
-    # Single GPU with QLoRA
+    # Single/Multi GPU with QLoRA
     python scripts/train_regression.py --tasks clearance
 
     # Multiple tasks (runs sequentially)
     python scripts/train_regression.py --tasks esol freesolv lipophilicity
-
-    # Multi-GPU
-    torchrun --nproc_per_node=4 scripts/train_regression.py --tasks esol
 
     # Full finetuning
     python scripts/train_regression.py --tasks lipophilicity --full_finetune --lr 1e-5

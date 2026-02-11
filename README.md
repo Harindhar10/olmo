@@ -184,7 +184,6 @@ Register a task in the appropriate file under `olmochem/tasks/`:
 
 ```python
 # olmochem/tasks/classification.py
-from .base import TaskConfig, register_task
 
 register_task(TaskConfig(
     name="bace_classification",
