@@ -228,7 +228,7 @@ def main():
         accelerator="gpu",
         devices=-1,
         strategy="ddp",
-        precision="bf16-mixed",
+        precision="16-mixed",
         gradient_clip_val=args.max_grad_norm,
         accumulate_grad_batches=args.gradient_accum,
         callbacks=callbacks,
