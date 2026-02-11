@@ -187,9 +187,9 @@ Register a task in the appropriate file under `olmochem/tasks/`:
 from .base import TaskConfig, register_task
 
 register_task(TaskConfig(
-    name="my_dataset",
-    task_columns=["activity"],
-    prompt="Is this molecule active against the target?",
+    name="bace_classification",
+    task_columns=["Class"],
+    prompt="Is this molecule a BACE-1 inhibitor?",
     task_type="binary",
     monitor_metric="val/roc_auc",
     monitor_mode="max",
