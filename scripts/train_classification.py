@@ -121,6 +121,11 @@ def parse_args():
         "--output_dir", type=str, default="./outputs", help="Output directory"
     )
     parser.add_argument(
+        "--delete_checkpoint",
+        action="store_true",
+        help="Delete saved checkpoint after test evaluation",
+    )
+    parser.add_argument(
         "--tracker",
         type=str,
         default="mlflow",
@@ -238,6 +243,8 @@ def run_task(args, task_name):
             mode=task_config.monitor_mode,
             verbose=True,
         ),
+        LearningRateMonitor(logging_interval="step"),
+        MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
         ModelCheckpoint(
             dirpath=f"{args.output_dir}/{task_name}/{timestamp}",
             filename="best",
@@ -247,8 +254,6 @@ def run_task(args, task_name):
             save_weights_only=True,
             verbose=True,
         ),
-        LearningRateMonitor(logging_interval="step"),
-        MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
     ]
 
     # Tracker init (rank 0 only)
@@ -333,6 +338,13 @@ def run_task(args, task_name):
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
         print0(f"\nDone! Best {task_config.monitor_metric}: {checkpoint_callback.best_model_score:.4f}")
+
+        if args.delete_checkpoint:
+            import shutil
+
+            checkpoint_dir = f"{args.output_dir}/{task_name}/{timestamp}"
+            shutil.rmtree(checkpoint_dir, ignore_errors=True)
+            print0(f"Deleted checkpoint directory: {checkpoint_dir}")
 
     # Cleanup GPU memory for next task
     del model, trainer
