@@ -9,6 +9,6 @@ from .tasks import get_task, list_tasks, register_task, TaskConfig
 from .model import ClassificationHead, CausalLMClassificationHead, RegressionHead
 from .data import MoleculeDataset, PretrainingDataset, InstructionDataset
 from .trainer import OLMoClassifier, OLMoRegressor, OLMoPretrainer
-from .callbacks import MLflowCallback
+from .callbacks import MLflowCallback, WandbCallback
 
 __version__ = "0.1.0"

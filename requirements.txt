@@ -17,6 +17,7 @@ torchmetrics>=1.0.0
 
 # Experiment tracking
 mlflow>=2.8.0
+wandb>=0.15.0
 
 # Optional: for data preparation
 # deepchem>=2.7.0

@@ -25,7 +25,6 @@ from datetime import datetime
 # Add parent to path for local development
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import mlflow
 import pandas as pd
 import pytorch_lightning as pl
 import torch
@@ -37,7 +36,7 @@ from pytorch_lightning.callbacks import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from olmochem.callbacks import MLflowCallback
+from olmochem.callbacks import MLflowCallback, WandbCallback
 from olmochem.data import MoleculeDataset
 from olmochem.tasks import get_task, list_tasks
 from olmochem.trainer import OLMoClassifier
@@ -122,7 +121,23 @@ def parse_args():
         "--output_dir", type=str, default="./outputs", help="Output directory"
     )
     parser.add_argument(
-        "--mlflow_uri", type=str, default="./mlruns", help="MLflow tracking URI"
+        "--tracker",
+        type=str,
+        default="mlflow",
+        choices=["mlflow", "wandb"],
+        help="Experiment tracker to use",
+    )
+    parser.add_argument(
+        "--mlflow_uri",
+        type=str,
+        default="./mlruns",
+        help="MLflow tracking URI (used when --tracker=mlflow)",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default=None,
+        help="W&B project name (used when --tracker=wandb, default: olmochem-{task_name})",
     )
 
     return parser.parse_args()
@@ -221,21 +236,40 @@ def run_task(args, task_name):
             verbose=True,
         ),
         LearningRateMonitor(logging_interval="step"),
-        MLflowCallback(),
+        MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
     ]
 
-    # MLflow (rank 0 only)
+    # Tracker init (rank 0 only)
     if is_main_process():
-        mlflow.set_tracking_uri(args.mlflow_uri)
-        mlflow.set_experiment(f"olmochem-{task_name}")
-        mlflow.start_run(run_name=f"{task_name}_{timestamp}")
-        mlflow.log_params(vars(args))
-        mlflow.log_params({
-            "task": task_name,
-            "task_type": task_config.task_type,
-            "num_tasks": task_config.num_tasks,
-            "effective_batch_size": args.batch_size * args.gradient_accum,
-        })
+        if args.tracker == "mlflow":
+            import mlflow
+
+            mlflow.set_tracking_uri(args.mlflow_uri)
+            mlflow.set_experiment(f"olmochem-{task_name}")
+            mlflow.start_run(run_name=f"{task_name}_{timestamp}")
+            mlflow.log_params(vars(args))
+            mlflow.log_params({
+                "task": task_name,
+                "task_type": task_config.task_type,
+                "num_tasks": task_config.num_tasks,
+                "effective_batch_size": args.batch_size * args.gradient_accum,
+            })
+        elif args.tracker == "wandb":
+            import wandb
+
+            project_name = args.wandb_project or f"olmochem-{task_name}"
+            wandb.init(
+                project=project_name,
+                name=f"{task_name}_{timestamp}",
+                config=vars(args),
+                reinit=True,
+            )
+            wandb.config.update({
+                "task": task_name,
+                "task_type": task_config.task_type,
+                "num_tasks": task_config.num_tasks,
+                "effective_batch_size": args.batch_size * args.gradient_accum,
+            })
 
     # Trainer
     trainer = pl.Trainer(
@@ -264,15 +298,24 @@ def run_task(args, task_name):
     print0("\nRunning test evaluation...")
     trainer.test(model, test_loader)
 
-    # Finalize MLflow
+    # Finalize tracker
     if is_main_process():
-        for key, value in trainer.callback_metrics.items():
-            metric_name = f"final_{key.replace('/', '_')}"
-            mlflow.log_metric(metric_name, float(value))
+        if args.tracker == "mlflow":
+            import mlflow
+
+            for key, value in trainer.callback_metrics.items():
+                metric_name = f"final_{key.replace('/', '_')}"
+                mlflow.log_metric(metric_name, float(value))
+            mlflow.end_run()
+        elif args.tracker == "wandb":
+            import wandb
+
+            for key, value in trainer.callback_metrics.items():
+                metric_name = f"final_{key.replace('/', '_')}"
+                wandb.log({metric_name: float(value)})
+            wandb.finish()
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-
-        mlflow.end_run()
         print0(f"\nDone! Best {task_config.monitor_metric}: {checkpoint_callback.best_model_score:.4f}")
 
     # Cleanup GPU memory for next task
