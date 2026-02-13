@@ -139,6 +139,18 @@ def parse_args():
         default=None,
         help="W&B project name (used when --tracker=wandb, default: olmochem-{task_name})",
     )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="W&B entity (username or team name)",
+    )
+    parser.add_argument(
+        "--wandb_key",
+        type=str,
+        default=None,
+        help="W&B API key (optional, can also use WANDB_API_KEY env var)",
+    )
 
     return parser.parse_args()
 
@@ -257,8 +269,12 @@ def run_task(args, task_name):
         elif args.tracker == "wandb":
             import wandb
 
+            if args.wandb_key:
+                wandb.login(key=args.wandb_key)
+
             project_name = args.wandb_project or f"olmochem-{task_name}"
             wandb.init(
+                entity=args.wandb_entity,
                 project=project_name,
                 name=f"{task_name}_{timestamp}",
                 config=vars(args),
