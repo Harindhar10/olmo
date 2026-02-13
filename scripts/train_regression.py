@@ -7,7 +7,7 @@ Examples:
     python scripts/train_regression.py --tasks clearance
 
     # Multiple tasks (runs sequentially)
-    python scripts/train_regression.py --tasks esol freesolv lipophilicity
+    python scripts/train_regression.py --tasks delaney freesolv lipophilicity
 
     # Full finetuning
     python scripts/train_regression.py --tasks lipophilicity --full_finetune --lr 1e-5

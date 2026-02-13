@@ -11,7 +11,7 @@ Supports classification (binary, multilabel, multitask), regression, causal LM p
 | **Classification** | BBBP, BACE, HIV, ClinTox | Binary |
 | **Classification** | SIDER (27 side-effect labels) | Multilabel |
 | **Classification** | Tox21 (12 toxicity assays) | Multitask |
-| **Regression** | ESOL, FreeSolv, Lipophilicity, Clearance, BACE | Continuous |
+| **Regression** | Delaney (ESOL), FreeSolv, Lipophilicity, Clearance, BACE | Continuous |
 | **Pretraining** | ZINC20, PubChem | Causal LM |
 | **Instruction Tuning** | USPTO (via OpenMol) | Reaction prediction |
 
@@ -67,7 +67,7 @@ python scripts/prepare_data.py \
 # Multiple datasets at once
 python scripts/prepare_data.py \
     --split_type deepchem \
-    --datasets bbbp bace hiv clintox tox21 sider esol freesolv lipophilicity \
+    --datasets bbbp bace hiv clintox tox21 sider delaney freesolv lipophilicity \
     --data_dir datasets/deepchem_splits
 ```
 

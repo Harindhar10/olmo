@@ -28,7 +28,7 @@ register_task(TaskConfig(
 # ============================================================================
 
 register_task(TaskConfig(
-    name="esol",
+    name="delaney",
     task_columns=["measured log solubility in mols per litre"],
     prompt="Predict aqueous solubility from SMILES",
     task_type="regression",
