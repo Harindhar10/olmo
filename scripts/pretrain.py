@@ -98,6 +98,8 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
     parser.add_argument("--warmup_ratio", type=float, default=0.15, help="Warmup ratio")
     parser.add_argument("--max_grad_norm", type=float, default=0.5, help="Max gradient norm")
+    parser.add_argument("--val_ratio", type=float, default=0.05, help="Fraction of data for validation")
+    parser.add_argument("--val_check_interval", type=int, default=500, help="Validate every N training steps")
 
     # ---- LoRA ----
     parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank")
@@ -183,17 +185,23 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Dataset
-    dataset = PretrainingDataset(smiles_list, tokenizer, args.max_len)
+    # Split into train/val
+    val_size = int(len(smiles_list) * args.val_ratio)
+    val_smiles = smiles_list[:val_size]
+    train_smiles = smiles_list[val_size:]
 
-    # DataLoader
-    dataloader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=4,
-        pin_memory=True,
-    )
+    train_dataset = PretrainingDataset(train_smiles, tokenizer, args.max_len)
+    val_dataset = PretrainingDataset(val_smiles, tokenizer, args.max_len)
+    print0(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
+
+    # DataLoaders
+    loader_kwargs = {
+        "batch_size": args.batch_size,
+        "num_workers": 4,
+        "pin_memory": True,
+    }
+    train_dataloader = DataLoader(train_dataset, shuffle=True, **loader_kwargs)
+    val_dataloader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
 
     # Model
     model = OLMoPretrainer(
@@ -261,11 +269,12 @@ def main():
         log_every_n_steps=10,
         enable_checkpointing=False,
         enable_progress_bar=True,
+        val_check_interval=args.val_check_interval,
     )
 
     # Train
     print0(f"Starting pretraining on {args.dataset}...")
-    trainer.fit(model, dataloader)
+    trainer.fit(model, train_dataloader, val_dataloader)
 
     # Finalize tracker
     if is_main_process():

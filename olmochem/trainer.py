@@ -5,6 +5,8 @@ Provides OLMoClassifier, OLMoRegressor, and OLMoPretrainer modules
 with support for QLoRA and full finetuning.
 """
 
+import math
+
 import torch
 import pytorch_lightning as pl
 from transformers import (
@@ -515,6 +517,27 @@ class OLMoPretrainer(pl.LightningModule):
         )
         loss = outputs.loss
         self.log("train/loss", loss, prog_bar=True, on_step=True, sync_dist=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        outputs = self(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            labels=batch["labels"],
+        )
+        loss = outputs.loss
+
+        # Perplexity
+        perplexity = torch.exp(loss)
+
+        # BPB: bits per byte
+        num_tokens = (batch["labels"] != -100).sum()
+        num_bytes = batch["num_bytes"].sum()
+        bpb = (loss * num_tokens) / (num_bytes * math.log(2))
+
+        self.log("val/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("val/perplexity", perplexity, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log("val/bpb", bpb, on_epoch=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self):

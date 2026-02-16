@@ -158,6 +158,11 @@ class PretrainingDataset(Dataset):
         self.labels = self.encodings["input_ids"].clone()
         self.labels[self.labels == tokenizer.pad_token_id] = -100
 
+        # Byte counts for BPB calculation
+        self.num_bytes = torch.tensor(
+            [len(t.encode("utf-8")) for t in texts], dtype=torch.long
+        )
+
         self.num_samples = len(smiles_list)
 
     def __len__(self) -> int:
@@ -168,6 +173,7 @@ class PretrainingDataset(Dataset):
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
             "labels": self.labels[idx],
+            "num_bytes": self.num_bytes[idx],
         }
 
 
@@ -194,6 +200,16 @@ class InstructionDataset(Dataset):
 
         # Materialize if streaming
         self.data = list(data)
+
+        # Precompute byte counts for BPB calculation
+        self.num_bytes = [
+            len(
+                f"Instruction: {item['instruction']}\n"
+                f"Input: {item['input']}\n"
+                f"Output: {item['output']}".encode("utf-8")
+            )
+            for item in self.data
+        ]
 
     def __len__(self) -> int:
         return len(self.data)
@@ -224,6 +240,7 @@ class InstructionDataset(Dataset):
             "input_ids": encodings["input_ids"].squeeze(0),
             "attention_mask": encodings["attention_mask"].squeeze(0),
             "labels": labels.squeeze(0),
+            "num_bytes": torch.tensor(self.num_bytes[idx], dtype=torch.long),
         }
 
 
