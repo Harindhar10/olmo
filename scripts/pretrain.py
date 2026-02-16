@@ -17,6 +17,7 @@ import argparse
 import gc
 import os
 import sys
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -24,9 +25,11 @@ import pytorch_lightning as pl
 import torch
 from datasets import load_dataset
 from peft import PeftModel
+from pytorch_lightning.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from olmochem.callbacks import MLflowCallback, WandbCallback
 from olmochem.data import PretrainingDataset
 from olmochem.trainer import OLMoPretrainer
 from olmochem.utils import is_main_process, print0, set_seed
@@ -104,6 +107,37 @@ def parse_args():
     # ---- Infrastructure ----
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output_dir", type=str, default="./outputs", help="Output directory")
+    parser.add_argument(
+        "--tracker",
+        type=str,
+        default="mlflow",
+        choices=["mlflow", "wandb"],
+        help="Experiment tracker to use",
+    )
+    parser.add_argument(
+        "--mlflow_uri",
+        type=str,
+        default="./mlruns",
+        help="MLflow tracking URI (used when --tracker=mlflow)",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default=None,
+        help="W&B project name (used when --tracker=wandb, default: olmochem-pretrain-{dataset})",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="W&B entity (username or team name)",
+    )
+    parser.add_argument(
+        "--wandb_key",
+        type=str,
+        default=None,
+        help="W&B API key (optional, can also use WANDB_API_KEY env var)",
+    )
 
     return parser.parse_args()
 
@@ -173,6 +207,47 @@ def main():
         lora_dropout=args.lora_dropout,
     )
 
+    # Callbacks
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    callbacks = [
+        LearningRateMonitor(logging_interval="step"),
+        MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
+    ]
+
+    # Tracker init (rank 0 only)
+    if is_main_process():
+        if args.tracker == "mlflow":
+            import mlflow
+
+            mlflow.set_tracking_uri(args.mlflow_uri)
+            mlflow.set_experiment(f"olmochem-pretrain-{args.dataset}")
+            mlflow.start_run(run_name=f"pretrain-{args.dataset}_{timestamp}")
+            mlflow.log_params(vars(args))
+            mlflow.log_params({
+                "dataset": args.dataset,
+                "num_samples": args.num_samples,
+                "effective_batch_size": args.batch_size * args.gradient_accum,
+            })
+        elif args.tracker == "wandb":
+            import wandb
+
+            if args.wandb_key:
+                wandb.login(key=args.wandb_key)
+
+            project_name = args.wandb_project or f"olmochem-pretrain-{args.dataset}"
+            wandb.init(
+                entity=args.wandb_entity,
+                project=project_name,
+                name=f"pretrain-{args.dataset}_{timestamp}",
+                config=vars(args),
+                reinit=True,
+            )
+            wandb.config.update({
+                "dataset": args.dataset,
+                "num_samples": args.num_samples,
+                "effective_batch_size": args.batch_size * args.gradient_accum,
+            })
+
     # Trainer
     trainer = pl.Trainer(
         accelerator="gpu",
@@ -182,6 +257,7 @@ def main():
         max_epochs=args.epochs,
         accumulate_grad_batches=args.gradient_accum,
         gradient_clip_val=args.max_grad_norm,
+        callbacks=callbacks,
         log_every_n_steps=10,
         enable_checkpointing=False,
         enable_progress_bar=True,
@@ -190,6 +266,21 @@ def main():
     # Train
     print0(f"Starting pretraining on {args.dataset}...")
     trainer.fit(model, dataloader)
+
+    # Finalize tracker
+    if is_main_process():
+        if args.tracker == "mlflow":
+            import mlflow
+
+            for key, value in trainer.callback_metrics.items():
+                mlflow.log_metric(f"final_{key.replace('/', '_')}", float(value))
+            mlflow.end_run()
+        elif args.tracker == "wandb":
+            import wandb
+
+            for key, value in trainer.callback_metrics.items():
+                wandb.log({f"final_{key.replace('/', '_')}": float(value)})
+            wandb.finish()
 
     # Merge and push to hub
     if trainer.is_global_zero and args.hub_name:
