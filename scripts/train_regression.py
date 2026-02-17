@@ -32,11 +32,11 @@ from pytorch_lightning.callbacks import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from chembert4.callbacks import MLflowCallback, WandbCallback
-from chembert4.data import MoleculeDataset
-from chembert4.tasks import get_task, list_tasks
-from chembert4.trainer import OLMoRegressor
-from chembert4.utils import is_main_process, print0, set_seed
+from chemberta4.callbacks import MLflowCallback, WandbCallback
+from chemberta4.data import MoleculeDataset
+from chemberta4.tasks import get_task, list_tasks
+from chemberta4.trainer import OLMoRegressor
+from chemberta4.utils import is_main_process, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -125,7 +125,7 @@ def parse_args():
         "--wandb_project",
         type=str,
         default=None,
-        help="W&B project name (used when --tracker=wandb, default: chembert4-{task_name})",
+        help="W&B project name (used when --tracker=wandb, default: chemberta4-{task_name})",
     )
     parser.add_argument(
         "--wandb_entity",
@@ -245,19 +245,24 @@ def run_task(args, task_name):
         ),
     ]
 
+    num_devices = torch.cuda.device_count() or 1
+
     # Tracker init (rank 0 only)
     if is_main_process():
         if args.tracker == "mlflow":
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment(f"chembert4-{task_name}")
+            mlflow.set_experiment(f"chemberta4-{task_name}")
             mlflow.start_run(run_name=f"{task_name}_{timestamp}")
-            mlflow.log_params(vars(args))
+            log_params = {k: v for k, v in vars(args).items() if k != "wandb_key"}
+            mlflow.log_params(log_params)
             mlflow.log_params({
                 "task": task_name,
                 "label_mean": label_stats["mean"],
                 "label_std": label_stats["std"],
+                "num_devices": num_devices,
+                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })
         elif args.tracker == "wandb":
             import wandb
@@ -265,18 +270,21 @@ def run_task(args, task_name):
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or f"chembert4-{task_name}"
+            project_name = args.wandb_project or f"chemberta4-{task_name}"
+            log_params = {k: v for k, v in vars(args).items() if k not in ("wandb_key", "mlflow_uri")}
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,
                 name=f"{task_name}_{timestamp}",
-                config=vars(args),
+                config=log_params,
                 reinit=True,
             )
             wandb.config.update({
                 "task": task_name,
                 "label_mean": label_stats["mean"],
                 "label_std": label_stats["std"],
+                "num_devices": num_devices,
+                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })
 
     # Trainer

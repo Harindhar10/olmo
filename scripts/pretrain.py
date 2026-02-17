@@ -29,10 +29,10 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from chembert4.callbacks import MLflowCallback, WandbCallback
-from chembert4.data import PretrainingDataset
-from chembert4.trainer import OLMoPretrainer
-from chembert4.utils import is_main_process, print0, set_seed
+from chemberta4.callbacks import MLflowCallback, WandbCallback
+from chemberta4.data import PretrainingDataset
+from chemberta4.trainer import OLMoPretrainer
+from chemberta4.utils import is_main_process, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -126,7 +126,7 @@ def parse_args():
         "--wandb_project",
         type=str,
         default=None,
-        help="W&B project name (used when --tracker=wandb, default: chembert4-pretrain-{dataset})",
+        help="W&B project name (used when --tracker=wandb, default: chemberta4-pretrain-{dataset})",
     )
     parser.add_argument(
         "--wandb_entity",
@@ -222,19 +222,23 @@ def main():
         MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
     ]
 
+    num_devices = torch.cuda.device_count() or 1
+
     # Tracker init (rank 0 only)
     if is_main_process():
         if args.tracker == "mlflow":
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment(f"chembert4-pretrain-{args.dataset}")
+            mlflow.set_experiment(f"chemberta4-pretrain-{args.dataset}")
             mlflow.start_run(run_name=f"pretrain-{args.dataset}_{timestamp}")
-            mlflow.log_params(vars(args))
+            log_params = {k: v for k, v in vars(args).items() if k != "wandb_key"}
+            mlflow.log_params(log_params)
             mlflow.log_params({
                 "dataset": args.dataset,
                 "num_samples": args.num_samples,
-                "effective_batch_size": args.batch_size * args.gradient_accum,
+                "num_devices": num_devices,
+                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })
         elif args.tracker == "wandb":
             import wandb
@@ -242,18 +246,20 @@ def main():
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or f"chembert4-pretrain-{args.dataset}"
+            project_name = args.wandb_project or f"chemberta4-pretrain-{args.dataset}"
+            log_params = {k: v for k, v in vars(args).items() if k not in ("wandb_key", "mlflow_uri")}
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,
                 name=f"pretrain-{args.dataset}_{timestamp}",
-                config=vars(args),
+                config=log_params,
                 reinit=True,
             )
             wandb.config.update({
                 "dataset": args.dataset,
                 "num_samples": args.num_samples,
-                "effective_batch_size": args.batch_size * args.gradient_accum,
+                "num_devices": num_devices,
+                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })
 
     # Trainer
