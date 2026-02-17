@@ -2,7 +2,7 @@
 Task registry for molecular property prediction.
 
 Adding a new task is simple:
-    from olmochem.tasks import register_task, TaskConfig
+    from chembert4.tasks import register_task, TaskConfig
 
     register_task(TaskConfig(
         name="my_dataset",

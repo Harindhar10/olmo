@@ -1,5 +1,5 @@
 """
-olmochem - A minimal library for molecular property prediction with OLMo
+chembert4 - A minimal library for molecular property prediction with OLMo
 
 Following the nanochat philosophy: explicit over implicit, minimal abstraction.
 """

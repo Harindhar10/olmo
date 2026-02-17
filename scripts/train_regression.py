@@ -32,11 +32,11 @@ from pytorch_lightning.callbacks import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from olmochem.callbacks import MLflowCallback, WandbCallback
-from olmochem.data import MoleculeDataset
-from olmochem.tasks import get_task, list_tasks
-from olmochem.trainer import OLMoRegressor
-from olmochem.utils import is_main_process, print0, set_seed
+from chembert4.callbacks import MLflowCallback, WandbCallback
+from chembert4.data import MoleculeDataset
+from chembert4.tasks import get_task, list_tasks
+from chembert4.trainer import OLMoRegressor
+from chembert4.utils import is_main_process, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -125,7 +125,7 @@ def parse_args():
         "--wandb_project",
         type=str,
         default=None,
-        help="W&B project name (used when --tracker=wandb, default: olmochem-{task_name})",
+        help="W&B project name (used when --tracker=wandb, default: chembert4-{task_name})",
     )
     parser.add_argument(
         "--wandb_entity",
@@ -251,7 +251,7 @@ def run_task(args, task_name):
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment(f"olmochem-{task_name}")
+            mlflow.set_experiment(f"chembert4-{task_name}")
             mlflow.start_run(run_name=f"{task_name}_{timestamp}")
             mlflow.log_params(vars(args))
             mlflow.log_params({
@@ -265,7 +265,7 @@ def run_task(args, task_name):
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or f"olmochem-{task_name}"
+            project_name = args.wandb_project or f"chembert4-{task_name}"
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,

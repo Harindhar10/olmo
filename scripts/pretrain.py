@@ -29,10 +29,10 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from olmochem.callbacks import MLflowCallback, WandbCallback
-from olmochem.data import PretrainingDataset
-from olmochem.trainer import OLMoPretrainer
-from olmochem.utils import is_main_process, print0, set_seed
+from chembert4.callbacks import MLflowCallback, WandbCallback
+from chembert4.data import PretrainingDataset
+from chembert4.trainer import OLMoPretrainer
+from chembert4.utils import is_main_process, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -126,7 +126,7 @@ def parse_args():
         "--wandb_project",
         type=str,
         default=None,
-        help="W&B project name (used when --tracker=wandb, default: olmochem-pretrain-{dataset})",
+        help="W&B project name (used when --tracker=wandb, default: chembert4-pretrain-{dataset})",
     )
     parser.add_argument(
         "--wandb_entity",
@@ -228,7 +228,7 @@ def main():
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment(f"olmochem-pretrain-{args.dataset}")
+            mlflow.set_experiment(f"chembert4-pretrain-{args.dataset}")
             mlflow.start_run(run_name=f"pretrain-{args.dataset}_{timestamp}")
             mlflow.log_params(vars(args))
             mlflow.log_params({
@@ -242,7 +242,7 @@ def main():
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or f"olmochem-pretrain-{args.dataset}"
+            project_name = args.wandb_project or f"chembert4-pretrain-{args.dataset}"
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,

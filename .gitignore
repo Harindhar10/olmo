@@ -4,3 +4,7 @@ cache
 prepare_data_script.sh
 mlruns
 later
+wandb
+outputs
+lightning_logs
+__pycache__

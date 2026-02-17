@@ -29,10 +29,10 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from olmochem.callbacks import MLflowCallback, WandbCallback
-from olmochem.data import InstructionDataset
-from olmochem.trainer import OLMoPretrainer
-from olmochem.utils import is_main_process, print0, set_seed
+from chembert4.callbacks import MLflowCallback, WandbCallback
+from chembert4.data import InstructionDataset
+from chembert4.trainer import OLMoPretrainer
+from chembert4.utils import is_main_process, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -113,7 +113,7 @@ def parse_args():
         "--wandb_project",
         type=str,
         default=None,
-        help="W&B project name (used when --tracker=wandb, default: olmochem-instruction)",
+        help="W&B project name (used when --tracker=wandb, default: chembert4-instruction)",
     )
     parser.add_argument(
         "--wandb_entity",
@@ -193,7 +193,7 @@ def main():
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment("olmochem-instruction")
+            mlflow.set_experiment("chembert4-instruction")
             mlflow.start_run(run_name=f"instruction_{timestamp}")
             mlflow.log_params(vars(args))
             mlflow.log_params({
@@ -207,7 +207,7 @@ def main():
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or "olmochem-instruction"
+            project_name = args.wandb_project or "chembert4-instruction"
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,

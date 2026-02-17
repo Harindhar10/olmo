@@ -1,4 +1,4 @@
-# olmochem
+# chembert4
 
 Minimal library for molecular property prediction with [OLMo-7B](https://huggingface.co/allenai/OLMo-7B-hf).
 
@@ -180,10 +180,10 @@ python scripts/train_classification.py \
 
 ## Adding a New Task
 
-Register a task in the appropriate file under `olmochem/tasks/`:
+Register a task in the appropriate file under `chembert4/tasks/`:
 
 ```python
-# olmochem/tasks/classification.py
+# chembert4/tasks/classification.py
 
 register_task(TaskConfig(
     name="bace_classification",
@@ -204,8 +204,8 @@ python scripts/train_classification.py --task my_dataset --data_dir path/to/spli
 ## Repository Structure
 
 ```
-olmochem/
-├── olmochem/                  # Core library
+chembert4/
+├── chembert4/                  # Core library
 │   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead
 │   ├── data.py                # MoleculeDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
