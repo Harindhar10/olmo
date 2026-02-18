@@ -122,7 +122,7 @@ class OLMoClassifier(pl.LightningModule):
                 quantization_config=bnb_config,
                 device_map=device_map,
                 attn_implementation=hp.attn_implementation,
-                torch_dtype=torch.bfloat16,
+                torch_dtype=torch.float16,
             )
             if hp.use_qlora:
                 base = prepare_model_for_kbit_training(
