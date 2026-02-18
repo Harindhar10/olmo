@@ -58,6 +58,7 @@ class OLMoClassifier(pl.LightningModule):
         lora_r: int = 32,
         lora_alpha: int = 64,
         lora_dropout: float = 0.05,
+        attn_implementation: str = "flash_attention_2",
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -120,6 +121,8 @@ class OLMoClassifier(pl.LightningModule):
                 hp.model_name,
                 quantization_config=bnb_config,
                 device_map=device_map,
+                attn_implementation=hp.attn_implementation,
+                torch_dtype=torch.bfloat16,
             )
             if hp.use_qlora:
                 base = prepare_model_for_kbit_training(
@@ -139,6 +142,8 @@ class OLMoClassifier(pl.LightningModule):
                 hp.model_name,
                 quantization_config=bnb_config,
                 device_map=device_map,
+                attn_implementation=hp.attn_implementation,
+                torch_dtype=torch.bfloat16,
             )
             if hp.use_qlora:
                 base = prepare_model_for_kbit_training(

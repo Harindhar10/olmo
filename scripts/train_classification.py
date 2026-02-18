@@ -89,6 +89,12 @@ def parse_args():
         action="store_true",
         help="Full finetuning without LoRA",
     )
+    parser.add_argument(
+        "--attn_implementation",
+        type=str,
+        default="flash_attention_2",
+        help="Attention implementation (flash_attention_2, sdpa, or eager)",
+    )
 
     # ---- Training ----
     parser.add_argument("--max_len", type=int, default=128, help="Max sequence length")
@@ -232,6 +238,7 @@ def run_task(args, task_name):
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        attn_implementation=args.attn_implementation,
     )
 
     # Callbacks
