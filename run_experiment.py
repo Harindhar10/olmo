@@ -31,7 +31,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run experiments on molecular datasets")
 
     # Required
-    parser.add_argument("datasets", nargs="+", help="Dataset name(s) from tasks.yaml")
+    parser.add_argument("--datasets", nargs="+", required=True, help="Dataset name(s) from tasks.yaml")
 
     # Model
     parser.add_argument("--model_name", type=str, default=None)
