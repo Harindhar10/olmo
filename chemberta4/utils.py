@@ -59,6 +59,20 @@ def load_config(config_path: str):
     return SimpleNamespace(**data)
 
 
+def get_task(name: str, tasks_path: str = None):
+    """Load a task definition from configs/tasks.yaml as a SimpleNamespace."""
+    import yaml
+    from types import SimpleNamespace
+    from pathlib import Path
+    if tasks_path is None:
+        tasks_path = str(Path(__file__).resolve().parent.parent / "configs" / "tasks.yaml")
+    with open(tasks_path) as f:
+        all_tasks = yaml.safe_load(f)
+    if name not in all_tasks:
+        raise ValueError(f"Unknown task '{name}'. Available: {list(all_tasks.keys())}")
+    return SimpleNamespace(name=name, **all_tasks[name])
+
+
 def format_params(num_params: int) -> str:
     """Format parameter count for display."""
     if num_params >= 1e9:

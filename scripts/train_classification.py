@@ -31,9 +31,8 @@ from transformers import AutoTokenizer
 
 from chemberta4.callbacks import MLflowCallback, WandbCallback
 from chemberta4.data import MoleculeDataset
-from chemberta4.tasks import get_task
 from chemberta4.trainer import OLMoClassifier
-from chemberta4.utils import is_main_process, load_config, print0, set_seed
+from chemberta4.utils import get_task, is_main_process, load_config, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -100,7 +99,7 @@ def run_task(args, task_name):
     use_qlora = args.use_qlora and not args.full_finetune
     model = OLMoClassifier(
         model_name=args.model_name,
-        num_tasks=task_config.num_tasks,
+        num_tasks=len(task_config.task_columns),
         task_type=task_config.task_type,
         use_lm_head=args.use_lm_head,
         use_qlora=use_qlora,
@@ -149,7 +148,7 @@ def run_task(args, task_name):
             mlflow.log_params({
                 "task": task_name,
                 "task_type": task_config.task_type,
-                "num_tasks": task_config.num_tasks,
+                "num_tasks": len(task_config.task_columns),
                 "num_devices": num_devices,
                 "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })
@@ -171,7 +170,7 @@ def run_task(args, task_name):
             wandb.config.update({
                 "task": task_name,
                 "task_type": task_config.task_type,
-                "num_tasks": task_config.num_tasks,
+                "num_tasks": len(task_config.task_columns),
                 "num_devices": num_devices,
                 "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
             })

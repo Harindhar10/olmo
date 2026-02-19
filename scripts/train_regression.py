@@ -30,9 +30,8 @@ from transformers import AutoTokenizer
 
 from chemberta4.callbacks import MLflowCallback, WandbCallback
 from chemberta4.data import MoleculeDataset
-from chemberta4.tasks import get_task
 from chemberta4.trainer import OLMoRegressor
-from chemberta4.utils import is_main_process, load_config, print0, set_seed
+from chemberta4.utils import get_task, is_main_process, load_config, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
