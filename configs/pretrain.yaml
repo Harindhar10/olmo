@@ -1,0 +1,36 @@
+# Dataset
+dataset: zinc20
+dataset_path: null
+smiles_column: smiles
+num_samples: 10000
+
+# Model
+model_name: allenai/OLMo-7B-hf
+use_qlora: true
+hub_name: null
+
+# Training
+max_len: 256
+batch_size: 2
+gradient_accum: 4
+lr: 0.0001
+weight_decay: 0.0001
+epochs: 1
+warmup_ratio: 0.15
+max_grad_norm: 0.5
+val_ratio: 0.05
+val_check_interval: 500
+
+# LoRA
+lora_r: 64
+lora_alpha: 128
+lora_dropout: 0.05
+
+# Infrastructure
+seed: 42
+output_dir: ./outputs
+tracker: mlflow
+mlflow_uri: ./mlruns
+wandb_project: null
+wandb_entity: null
+wandb_key: null

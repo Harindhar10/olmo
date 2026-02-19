@@ -1,0 +1,36 @@
+# Task
+tasks:
+  - clearance
+data_dir: olmo/datasets/deepchem_splits
+
+# Model
+model_name: allenai/OLMo-7B-hf
+use_qlora: true
+full_finetune: false
+
+# Training
+max_len: 128
+batch_size: 4
+gradient_accum: 4
+lr: 0.0002
+weight_decay: 0.01
+epochs: 30
+patience: 7
+warmup_ratio: 0.1
+max_grad_norm: 1.0
+
+# LoRA
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+
+# Infrastructure
+num_workers: 4
+seed: 42
+output_dir: ./outputs
+delete_checkpoint: false
+tracker: mlflow
+mlflow_uri: ./mlruns
+wandb_project: null
+wandb_entity: null
+wandb_key: null

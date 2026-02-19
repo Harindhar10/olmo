@@ -50,6 +50,15 @@ def get_device_map(device: torch.device) -> dict:
     return {"": "cpu"}
 
 
+def load_config(config_path: str):
+    """Load YAML config file and return as SimpleNamespace."""
+    import yaml
+    from types import SimpleNamespace
+    with open(config_path) as f:
+        data = yaml.safe_load(f)
+    return SimpleNamespace(**data)
+
+
 def format_params(num_params: int) -> str:
     """Format parameter count for display."""
     if num_params >= 1e9:

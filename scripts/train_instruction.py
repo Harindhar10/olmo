@@ -4,16 +4,12 @@ Instruction tuning on USPTO dataset.
 
 Examples:
     # Basic instruction tuning
-    torchrun --nproc_per_node=4 scripts/train_instruction.py --dataset uspto --num_samples 10000
+    torchrun --nproc_per_node=4 scripts/train_instruction.py configs/instruction.yaml
 
-    # Continue from pretrained model
-    python scripts/train_instruction.py --dataset uspto --model_name harindhar10/OLMo-7B-ZINC20
-
-    # Push to hub
-    torchrun --nproc_per_node=4 scripts/train_instruction.py --dataset uspto --hub_name username/model
+    # Custom config
+    python scripts/train_instruction.py my_config.yaml
 """
 
-import argparse
 import gc
 import os
 import sys
@@ -32,107 +28,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from chemberta4.callbacks import MLflowCallback, WandbCallback
 from chemberta4.data import InstructionDataset
 from chemberta4.trainer import OLMoPretrainer
-from chemberta4.utils import is_main_process, print0, set_seed
+from chemberta4.utils import is_main_process, load_config, print0, set_seed
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="OLMo Instruction Tuning",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # ---- Dataset ----
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default="OpenMol/USPTO_1k_TPL-SFT",
-        help="HuggingFace dataset name for instruction tuning",
-    )
-    parser.add_argument(
-        "--num_samples",
-        type=int,
-        default=10000,
-        help="Number of samples to use",
-    )
-
-    # ---- Model ----
-    parser.add_argument(
-        "--model_name",
-        type=str,
-        default="allenai/OLMo-7B-hf",
-        help="Base model name or path",
-    )
-    parser.add_argument(
-        "--use_qlora",
-        default=True,
-        help="Use 4-bit QLoRA",
-    )
-    parser.add_argument(
-        "--hub_name",
-        type=str,
-        default=None,
-        help="HuggingFace Hub name for pushing model",
-    )
-
-    # ---- Training ----
-    parser.add_argument("--max_len", type=int, default=512, help="Max sequence length")
-    parser.add_argument("--batch_size", type=int, default=1, help="Batch size per GPU")
-    parser.add_argument("--gradient_accum", type=int, default=4, help="Gradient accumulation")
-    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
-    parser.add_argument("--epochs", type=int, default=1, help="Number of epochs")
-    parser.add_argument("--warmup_ratio", type=float, default=0.15, help="Warmup ratio")
-    parser.add_argument("--max_grad_norm", type=float, default=0.5, help="Max gradient norm")
-    parser.add_argument("--val_ratio", type=float, default=0.05, help="Fraction of data for validation")
-    parser.add_argument("--val_check_interval", type=int, default=500, help="Validate every N training steps")
-
-    # ---- LoRA ----
-    parser.add_argument("--lora_r", type=int, default=64, help="LoRA rank")
-    parser.add_argument("--lora_alpha", type=int, default=128, help="LoRA alpha")
-    parser.add_argument("--lora_dropout", type=float, default=0.05, help="LoRA dropout")
-
-    # ---- Infrastructure ----
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--output_dir", type=str, default="./outputs", help="Output directory")
-    parser.add_argument(
-        "--tracker",
-        type=str,
-        default="mlflow",
-        choices=["mlflow", "wandb"],
-        help="Experiment tracker to use",
-    )
-    parser.add_argument(
-        "--mlflow_uri",
-        type=str,
-        default="./mlruns",
-        help="MLflow tracking URI (used when --tracker=mlflow)",
-    )
-    parser.add_argument(
-        "--wandb_project",
-        type=str,
-        default=None,
-        help="W&B project name (used when --tracker=wandb, default: chemberta4-instruction)",
-    )
-    parser.add_argument(
-        "--wandb_entity",
-        type=str,
-        default=None,
-        help="W&B entity (username or team name)",
-    )
-    parser.add_argument(
-        "--wandb_key",
-        type=str,
-        default=None,
-        help="W&B API key (optional, can also use WANDB_API_KEY env var)",
-    )
-
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/instruction.yaml"
+    args = load_config(config_path)
     set_seed(args.seed)
     pl.seed_everything(args.seed)
 
