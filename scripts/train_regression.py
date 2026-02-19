@@ -36,7 +36,7 @@ from chemberta4.utils import get_task, is_main_process, load_config, print0, set
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def run_task(args, task_name):
+def run_regression_experiment(args, task_name):
     """Run training and evaluation for a single regression task."""
     # Get task config
     task_config = get_task(task_name)
@@ -102,10 +102,9 @@ def run_task(args, task_name):
     test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
 
     # Model
-    use_qlora = args.use_qlora and not args.full_finetune
     model = OLMoRegressor(
         model_name=args.model_name,
-        use_qlora=use_qlora,
+        finetune_strategy=args.finetune_strategy,
         lr=args.lr,
         weight_decay=args.weight_decay,
         warmup_ratio=args.warmup_ratio,
@@ -245,7 +244,7 @@ def main():
 
     print0(f"Running {len(args.tasks)} task(s): {', '.join(args.tasks)}")
     for task_name in args.tasks:
-        run_task(args, task_name)
+        run_regression_experiment(args, task_name)
 
 
 if __name__ == "__main__":

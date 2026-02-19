@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+Unified experiment runner for all task types.
+
+Examples:
+    # Single classification task
+    python run_experiment.py bbbp
+
+    # Multiple datasets (can mix types)
+    python run_experiment.py bbbp clearance zinc20
+
+    # Override defaults
+    python run_experiment.py bbbp --lr 0.001 --epochs 20 --batch_size 8
+
+    # Pretraining with custom settings
+    python run_experiment.py zinc20 --num_samples 50000 --hub_name my-org/my-model
+"""
+
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import pytorch_lightning as pl
+
+from chemberta4.utils import get_task, prepare_config, print0, set_seed
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run experiments on molecular datasets")
+
+    # Required
+    parser.add_argument("datasets", nargs="+", help="Dataset name(s) from tasks.yaml")
+
+    # Model
+    parser.add_argument("--model_name", type=str, default=None)
+    parser.add_argument("--finetune_strategy", type=str, choices=["qlora", "lora", "full_finetune"], default=None,
+                        help="Finetuning strategy: qlora (4-bit quantized LoRA), lora (LoRA without quantization), full_finetune (all parameters)")
+    parser.add_argument("--use_lm_head", action="store_true", default=None)
+
+    # Training
+    parser.add_argument("--max_len", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--gradient_accum", type=int, default=None)
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--weight_decay", type=float, default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--patience", type=int, default=None)
+    parser.add_argument("--warmup_ratio", type=float, default=None)
+    parser.add_argument("--max_grad_norm", type=float, default=None)
+
+    # LoRA
+    parser.add_argument("--lora_r", type=int, default=None)
+    parser.add_argument("--lora_alpha", type=int, default=None)
+    parser.add_argument("--lora_dropout", type=float, default=None)
+
+    # Infrastructure
+    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--output_dir", type=str, default=None)
+    parser.add_argument("--delete_checkpoint", action="store_true", default=None)
+    parser.add_argument("--tracker", type=str, choices=["mlflow", "wandb"], default=None)
+    parser.add_argument("--mlflow_uri", type=str, default=None)
+    parser.add_argument("--wandb_project", type=str, default=None)
+    parser.add_argument("--wandb_entity", type=str, default=None)
+    parser.add_argument("--wandb_key", type=str, default=None)
+
+    # Classification/Regression specific
+    parser.add_argument("--data_dir", type=str, default=None)
+
+    # Pretraining/Instruction specific
+    parser.add_argument("--num_samples", type=int, default=None)
+    parser.add_argument("--dataset_path", type=str, default=None)
+    parser.add_argument("--smiles_column", type=str, default=None)
+    parser.add_argument("--hub_name", type=str, default=None)
+    parser.add_argument("--val_ratio", type=float, default=None)
+    parser.add_argument("--val_check_interval", type=int, default=None)
+
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = parse_args()
+
+    for dataset_name in args.datasets:
+        task = get_task(dataset_name)
+        config = prepare_config(args, task)
+
+        # Set seed
+        seed = config.seed
+        set_seed(seed)
+        pl.seed_everything(seed, workers=True)
+
+        print0(f"\n{'='*60}")
+        print0(f"Running {task.experiment_type} experiment: {dataset_name}")
+        print0(f"{'='*60}")
+
+        if task.experiment_type == "classification":
+            from scripts.train_classification import run_classification_experiment
+            run_classification_experiment(config, dataset_name)
+
+        elif task.experiment_type == "regression":
+            from scripts.train_regression import run_regression_experiment
+            run_regression_experiment(config, dataset_name)
+
+        elif task.experiment_type == "pretraining":
+            from scripts.pretrain import run_pretraining_experiment
+            run_pretraining_experiment(config, dataset_name)
+
+        elif task.experiment_type == "instruction":
+            from scripts.train_instruction import run_instruction_experiment
+            run_instruction_experiment(config, dataset_name)
+
+        else:
+            raise ValueError(f"Unknown experiment type '{task.experiment_type}' for dataset '{dataset_name}'")
+
+    print0("\nAll experiments complete!")
+
+
+if __name__ == "__main__":
+    main()

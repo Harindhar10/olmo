@@ -37,7 +37,7 @@ from chemberta4.utils import get_task, is_main_process, load_config, print0, set
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def run_task(args, task_name):
+def run_classification_experiment(args, task_name):
     """Run training and evaluation for a single task."""
     # Get task config
     task_config = get_task(task_name)
@@ -96,13 +96,12 @@ def run_task(args, task_name):
     test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
 
     # Model
-    use_qlora = args.use_qlora and not args.full_finetune
     model = OLMoClassifier(
         model_name=args.model_name,
         num_tasks=len(task_config.task_columns),
         task_type=task_config.task_type,
         use_lm_head=args.use_lm_head,
-        use_qlora=use_qlora,
+        finetune_strategy=args.finetune_strategy,
         lr=args.lr,
         weight_decay=args.weight_decay,
         warmup_ratio=args.warmup_ratio,
@@ -195,7 +194,7 @@ def run_task(args, task_name):
     # Train
     print0("Starting training...")
     print0(f"Model approach: {'LM Head (Yes/No Token)' if args.use_lm_head else 'Classification Head'}")
-    print0(f"LoRA: {use_qlora}")
+    print0(f"Finetune strategy: {args.finetune_strategy}")
     trainer.fit(model, train_loader, val_loader)
 
     # Test
@@ -244,7 +243,7 @@ def main():
 
     print0(f"Running {len(args.tasks)} task(s): {', '.join(args.tasks)}")
     for task_name in args.tasks:
-        run_task(args, task_name)
+        run_classification_experiment(args, task_name)
 
 
 if __name__ == "__main__":

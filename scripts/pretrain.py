@@ -60,11 +60,10 @@ def load_smiles_data(args):
     return smiles_list
 
 
-def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/pretrain.yaml"
-    args = load_config(config_path)
-    set_seed(args.seed)
-    pl.seed_everything(args.seed)
+def run_pretraining_experiment(args, task_name):
+    """Run pretraining for a single dataset."""
+    # Set dataset in args for load_smiles_data compatibility
+    args.dataset = task_name
 
     print0(f"Loading dataset: {args.dataset}")
     smiles_list = load_smiles_data(args)
@@ -96,7 +95,7 @@ def main():
     # Model
     model = OLMoPretrainer(
         model_name=args.model_name,
-        use_qlora=args.use_qlora,
+        finetune_strategy=args.finetune_strategy,
         lr=args.lr,
         weight_decay=args.weight_decay,
         warmup_ratio=args.warmup_ratio,
@@ -225,6 +224,21 @@ def main():
         model.model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)
         print0(f"Adapter saved to: {adapter_path}")
+
+    # Cleanup
+    del model, trainer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def main():
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/pretrain.yaml"
+    args = load_config(config_path)
+    set_seed(args.seed)
+    pl.seed_everything(args.seed)
+
+    run_pretraining_experiment(args, args.dataset)
 
 
 if __name__ == "__main__":

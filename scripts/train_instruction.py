@@ -33,12 +33,8 @@ from chemberta4.utils import is_main_process, load_config, print0, set_seed
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/instruction.yaml"
-    args = load_config(config_path)
-    set_seed(args.seed)
-    pl.seed_everything(args.seed)
-
+def run_instruction_experiment(args, task_name):
+    """Run instruction tuning for a single dataset."""
     print0(f"Loading dataset: {args.dataset}")
 
     # Load dataset (streaming)
@@ -74,7 +70,7 @@ def main():
     # Model
     model = OLMoPretrainer(
         model_name=args.model_name,
-        use_qlora=args.use_qlora,
+        finetune_strategy=args.finetune_strategy,
         lr=args.lr,
         weight_decay=args.weight_decay,
         warmup_ratio=args.warmup_ratio,
@@ -98,8 +94,8 @@ def main():
             import mlflow
 
             mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment("chemberta4-instruction")
-            mlflow.start_run(run_name=f"instruction_{timestamp}")
+            mlflow.set_experiment(f"chemberta4-instruction-{task_name}")
+            mlflow.start_run(run_name=f"instruction-{task_name}_{timestamp}")
             log_params = {k: v for k, v in vars(args).items() if k != "wandb_key"}
             mlflow.log_params(log_params)
             mlflow.log_params({
@@ -114,12 +110,12 @@ def main():
             if args.wandb_key:
                 wandb.login(key=args.wandb_key)
 
-            project_name = args.wandb_project or "chemberta4-instruction"
+            project_name = args.wandb_project or f"chemberta4-instruction-{task_name}"
             log_params = {k: v for k, v in vars(args).items() if k not in ("wandb_key", "mlflow_uri")}
             wandb.init(
                 entity=args.wandb_entity,
                 project=project_name,
-                name=f"instruction_{timestamp}",
+                name=f"instruction-{task_name}_{timestamp}",
                 config=log_params,
                 reinit=True,
             )
@@ -169,7 +165,7 @@ def main():
     if trainer.is_global_zero and args.hub_name:
         print0("Training complete. Saving adapter...")
 
-        adapter_path = f"{args.output_dir}/instruction_adapter"
+        adapter_path = f"{args.output_dir}/{task_name}_instruction_adapter"
         model.model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)
 
@@ -198,10 +194,25 @@ def main():
 
         print0(f"Done! Model available at: https://huggingface.co/{args.hub_name}")
     elif trainer.is_global_zero:
-        adapter_path = f"{args.output_dir}/instruction_adapter"
+        adapter_path = f"{args.output_dir}/{task_name}_instruction_adapter"
         model.model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)
         print0(f"Adapter saved to: {adapter_path}")
+
+    # Cleanup
+    del model, trainer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def main():
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/instruction.yaml"
+    args = load_config(config_path)
+    set_seed(args.seed)
+    pl.seed_everything(args.seed)
+
+    run_instruction_experiment(args, "uspto")
 
 
 if __name__ == "__main__":

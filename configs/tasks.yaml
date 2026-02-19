@@ -6,6 +6,7 @@ bbbp:
   task_columns: [p_np]
   prompt: "Does this molecule permeate the blood-brain barrier?"
   task_type: binary
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -13,6 +14,7 @@ bace_classification:
   task_columns: [Class]
   prompt: "Is this molecule a BACE-1 inhibitor?"
   task_type: binary
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -20,6 +22,7 @@ hiv:
   task_columns: [HIV_active]
   prompt: "Does this molecule inhibit HIV replication?"
   task_type: binary
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -27,6 +30,7 @@ clintox:
   task_columns: [CT_TOX]
   prompt: "Is this molecule clinically toxic?"
   task_type: binary
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -65,6 +69,7 @@ sider:
     - "Injury, poisoning and procedural complications"
   prompt: "What side effects does this drug cause?"
   task_type: multilabel
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -88,6 +93,7 @@ tox21:
     - SR-p53
   prompt: "Predict toxicity across multiple assays for this molecule."
   task_type: multitask
+  experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
@@ -99,6 +105,7 @@ clearance:
   task_columns: [target]
   prompt: "Predict intrinsic hepatic clearance from SMILES"
   task_type: regression
+  experiment_type: regression
   target_column: target
   monitor_metric: val/rmse
   monitor_mode: min
@@ -107,6 +114,7 @@ delaney:
   task_columns: [measured log solubility in mols per litre]
   prompt: "Predict aqueous solubility from SMILES"
   task_type: regression
+  experiment_type: regression
   target_column: measured log solubility in mols per litre
   monitor_metric: val/rmse
   monitor_mode: min
@@ -115,6 +123,7 @@ freesolv:
   task_columns: [y]
   prompt: "Predict hydration free energy from SMILES"
   task_type: regression
+  experiment_type: regression
   target_column: y
   monitor_metric: val/rmse
   monitor_mode: min
@@ -123,6 +132,7 @@ lipo:
   task_columns: [exp]
   prompt: "Predict lipophilicity from SMILES"
   task_type: regression
+  experiment_type: regression
   target_column: exp
   monitor_metric: val/rmse
   monitor_mode: min
@@ -131,6 +141,7 @@ bace_regression:
   task_columns: [pIC50]
   prompt: "What is the BACE-1 inhibition strength (pIC50) of this molecule?"
   task_type: regression
+  experiment_type: regression
   target_column: pIC50
   monitor_metric: val/rmse
   monitor_mode: min
@@ -143,6 +154,7 @@ zinc20:
   task_columns: []
   prompt: "SMILES:"
   task_type: generation
+  experiment_type: pretraining
   monitor_metric: train/loss
   monitor_mode: min
 
@@ -150,6 +162,7 @@ pubchem:
   task_columns: []
   prompt: "SMILES:"
   task_type: generation
+  experiment_type: pretraining
   monitor_metric: train/loss
   monitor_mode: min
 
@@ -161,5 +174,6 @@ uspto:
   task_columns: [instruction, input, output]
   prompt: ""
   task_type: generation
+  experiment_type: instruction
   monitor_metric: train/loss
   monitor_mode: min

@@ -29,14 +29,14 @@ class OLMoClassifier(pl.LightningModule):
 
     Supports binary, multilabel, and multitask classification.
     Can use either a classification head or LM head (Yes/No prediction).
-    Supports QLoRA (4-bit) and full finetuning.
+    Supports QLoRA (4-bit), LoRA, and full finetuning.
 
     Args:
         model_name: HuggingFace model identifier
         num_tasks: Number of classification tasks/labels
         task_type: 'binary', 'multilabel', or 'multitask'
         use_lm_head: Use Yes/No prediction instead of classification head
-        use_qlora: Use 4-bit quantization with LoRA
+        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
         lr: Learning rate
         weight_decay: Weight decay for AdamW
         warmup_ratio: Fraction of steps for warmup
@@ -51,7 +51,7 @@ class OLMoClassifier(pl.LightningModule):
         num_tasks: int = 1,
         task_type: str = "binary",
         use_lm_head: bool = False,
-        use_qlora: bool = True,
+        finetune_strategy: str = "qlora",
         lr: float = 2e-4,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
@@ -92,25 +92,15 @@ class OLMoClassifier(pl.LightningModule):
         self.tokenizer = AutoTokenizer.from_pretrained(hp.model_name)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Quantization config (optional)
+        # Quantization config (only for qlora)
         bnb_config = None
-        if hp.use_qlora:
+        if hp.finetune_strategy == "qlora":
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
             )
-
-        # LoRA config
-        lora_cfg = LoraConfig(
-            r=hp.lora_r,
-            lora_alpha=hp.lora_alpha,
-            target_modules=["q_proj", "k_proj", "v_proj"],
-            lora_dropout=hp.lora_dropout,
-            bias="none",
-            task_type="CAUSAL_LM" if hp.use_lm_head else "FEATURE_EXTRACTION",
-        )
 
         device_map = get_device_map(self.device)
 
@@ -121,11 +111,20 @@ class OLMoClassifier(pl.LightningModule):
                 quantization_config=bnb_config,
                 device_map=device_map,
             )
-            if hp.use_qlora:
+            if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
                     base, use_gradient_checkpointing=True
                 )
-            base = get_peft_model(base, lora_cfg)
+            if hp.finetune_strategy != "full_finetune":
+                lora_cfg = LoraConfig(
+                    r=hp.lora_r,
+                    lora_alpha=hp.lora_alpha,
+                    target_modules=["q_proj", "k_proj", "v_proj"],
+                    lora_dropout=hp.lora_dropout,
+                    bias="none",
+                    task_type="CAUSAL_LM",
+                )
+                base = get_peft_model(base, lora_cfg)
 
             if self.global_rank == 0:
                 base.print_trainable_parameters()
@@ -140,11 +139,20 @@ class OLMoClassifier(pl.LightningModule):
                 quantization_config=bnb_config,
                 device_map=device_map,
             )
-            if hp.use_qlora:
+            if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
                     base, use_gradient_checkpointing=True
                 )
-            base = get_peft_model(base, lora_cfg)
+            if hp.finetune_strategy != "full_finetune":
+                lora_cfg = LoraConfig(
+                    r=hp.lora_r,
+                    lora_alpha=hp.lora_alpha,
+                    target_modules=["q_proj", "k_proj", "v_proj"],
+                    lora_dropout=hp.lora_dropout,
+                    bias="none",
+                    task_type="FEATURE_EXTRACTION",
+                )
+                base = get_peft_model(base, lora_cfg)
 
             if self.global_rank == 0:
                 base.print_trainable_parameters()
@@ -261,7 +269,7 @@ class OLMoRegressor(pl.LightningModule):
 
     Args:
         model_name: HuggingFace model identifier
-        use_qlora: Use 4-bit quantization with LoRA
+        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
         lr: Learning rate
         weight_decay: Weight decay for AdamW
         warmup_ratio: Fraction of steps for warmup
@@ -275,7 +283,7 @@ class OLMoRegressor(pl.LightningModule):
     def __init__(
         self,
         model_name: str = "allenai/OLMo-7B-hf",
-        use_qlora: bool = True,
+        finetune_strategy: str = "qlora",
         lr: float = 2e-4,
         weight_decay: float = 0.01,
         warmup_ratio: float = 0.1,
@@ -302,22 +310,13 @@ class OLMoRegressor(pl.LightningModule):
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
         bnb_config = None
-        if hp.use_qlora:
+        if hp.finetune_strategy == "qlora":
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
             )
-
-        lora_cfg = LoraConfig(
-            r=hp.lora_r,
-            lora_alpha=hp.lora_alpha,
-            target_modules=["q_proj", "k_proj", "v_proj"],
-            lora_dropout=hp.lora_dropout,
-            bias="none",
-            task_type="FEATURE_EXTRACTION",
-        )
 
         device_map = get_device_map(self.device)
 
@@ -327,9 +326,18 @@ class OLMoRegressor(pl.LightningModule):
             device_map=device_map,
         )
 
-        if hp.use_qlora:
+        if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
-        base = get_peft_model(base, lora_cfg)
+        if hp.finetune_strategy != "full_finetune":
+            lora_cfg = LoraConfig(
+                r=hp.lora_r,
+                lora_alpha=hp.lora_alpha,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+                lora_dropout=hp.lora_dropout,
+                bias="none",
+                task_type="FEATURE_EXTRACTION",
+            )
+            base = get_peft_model(base, lora_cfg)
 
         if self.global_rank == 0:
             base.print_trainable_parameters()
@@ -427,7 +435,7 @@ class OLMoPretrainer(pl.LightningModule):
 
     Args:
         model_name: HuggingFace model identifier or path to pretrained model
-        use_qlora: Use 4-bit quantization with LoRA
+        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
         lr: Learning rate
         weight_decay: Weight decay
         warmup_ratio: Fraction of steps for warmup
@@ -440,7 +448,7 @@ class OLMoPretrainer(pl.LightningModule):
     def __init__(
         self,
         model_name: str = "allenai/OLMo-7B-hf",
-        use_qlora: bool = True,
+        finetune_strategy: str = "qlora",
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
         warmup_ratio: float = 0.15,
@@ -467,7 +475,7 @@ class OLMoPretrainer(pl.LightningModule):
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         bnb_config = None
-        if hp.use_qlora:
+        if hp.finetune_strategy == "qlora":
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
@@ -485,19 +493,21 @@ class OLMoPretrainer(pl.LightningModule):
         if hp.gradient_checkpointing:
             model.gradient_checkpointing_enable()
 
-        if hp.use_qlora:
+        if hp.finetune_strategy == "qlora":
             model = prepare_model_for_kbit_training(model)
 
-        lora_cfg = LoraConfig(
-            r=hp.lora_r,
-            lora_alpha=hp.lora_alpha,
-            target_modules="all-linear",
-            lora_dropout=hp.lora_dropout,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
+        if hp.finetune_strategy != "full_finetune":
+            lora_cfg = LoraConfig(
+                r=hp.lora_r,
+                lora_alpha=hp.lora_alpha,
+                target_modules="all-linear",
+                lora_dropout=hp.lora_dropout,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(model, lora_cfg)
 
-        self.model = get_peft_model(model, lora_cfg)
+        self.model = model
 
         if self.trainer.is_global_zero:
             self.model.print_trainable_parameters()

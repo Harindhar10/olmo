@@ -73,6 +73,37 @@ def get_task(name: str, tasks_path: str = None):
     return SimpleNamespace(name=name, **all_tasks[name])
 
 
+def prepare_config(cli_args, task):
+    """
+    Merge YAML defaults with CLI overrides for a given task.
+
+    1. Load the default YAML config based on task.experiment_type
+    2. Override with any non-None CLI args (excluding 'datasets')
+    3. Return SimpleNamespace
+    """
+    from pathlib import Path
+
+    config_dir = Path(__file__).resolve().parent.parent / "configs"
+    yaml_map = {
+        "classification": "classification.yaml",
+        "regression": "regression.yaml",
+        "pretraining": "pretrain.yaml",
+        "instruction": "instruction.yaml",
+    }
+
+    yaml_file = config_dir / yaml_map[task.experiment_type]
+    config = load_config(str(yaml_file))
+
+    # Override with CLI args that were explicitly set (non-None)
+    for key, value in vars(cli_args).items():
+        if key == "datasets":
+            continue
+        if value is not None:
+            setattr(config, key, value)
+
+    return config
+
+
 def format_params(num_params: int) -> str:
     """Format parameter count for display."""
     if num_params >= 1e9:
