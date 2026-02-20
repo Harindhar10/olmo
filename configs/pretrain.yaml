@@ -1,5 +1,4 @@
 # Dataset
-dataset: zinc20
 dataset_path: null
 smiles_column: smiles
 num_samples: 10000

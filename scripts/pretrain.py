@@ -28,7 +28,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from chemberta4.callbacks import MLflowCallback, WandbCallback
 from chemberta4.data import PretrainingDataset
 from chemberta4.trainer import OLMoPretrainer
-from chemberta4.utils import is_main_process, load_config, print0, set_seed
+from chemberta4.utils import is_main_process, print0
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -230,16 +230,3 @@ def run_pretraining_experiment(args, task_name):
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-
-def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/pretrain.yaml"
-    args = load_config(config_path)
-    set_seed(args.seed)
-    pl.seed_everything(args.seed)
-
-    run_pretraining_experiment(args, args.dataset)
-
-
-if __name__ == "__main__":
-    main()

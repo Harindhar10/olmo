@@ -1,6 +1,3 @@
-# Task
-tasks:
-  - bbbp
 data_dir: olmo/datasets/deepchem_splits
 
 # Model

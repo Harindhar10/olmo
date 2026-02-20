@@ -31,7 +31,7 @@ from transformers import AutoTokenizer
 from chemberta4.callbacks import MLflowCallback, WandbCallback
 from chemberta4.data import MoleculeDataset
 from chemberta4.trainer import OLMoRegressor
-from chemberta4.utils import get_task, is_main_process, load_config, print0, set_seed
+from chemberta4.utils import get_task, is_main_process, print0
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -234,18 +234,3 @@ def run_regression_experiment(args, task_name):
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
-
-def main():
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/regression.yaml"
-    args = load_config(config_path)
-    set_seed(args.seed)
-    pl.seed_everything(args.seed, workers=True)
-
-    print0(f"Running {len(args.tasks)} task(s): {', '.join(args.tasks)}")
-    for task_name in args.tasks:
-        run_regression_experiment(args, task_name)
-
-
-if __name__ == "__main__":
-    main()

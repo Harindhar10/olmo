@@ -1,5 +1,4 @@
 # Dataset
-dataset: OpenMol/USPTO_1k_TPL-SFT
 num_samples: 10000
 
 # Model
