@@ -31,6 +31,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import pytorch_lightning as pl
 
 from chemberta4.utils import get_task, prepare_config, print0, set_seed

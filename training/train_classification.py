@@ -1,11 +1,6 @@
 import gc
-import os
-import sys
 from datetime import datetime
 from types import SimpleNamespace
-
-# Add parent to path for local development
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import pytorch_lightning as pl
@@ -22,8 +17,6 @@ from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeDataset
 from chemberta4.trainer import OLMoClassifier
 from chemberta4.utils import get_task, is_main_process, print0
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None:

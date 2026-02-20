@@ -1,10 +1,6 @@
 import gc
-import os
-import sys
 from datetime import datetime
 from types import SimpleNamespace
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytorch_lightning as pl
 import torch
@@ -18,8 +14,6 @@ from chemberta4.callbacks import WandbCallback
 from chemberta4.data import InstructionDataset
 from chemberta4.trainer import OLMoPretrainer
 from chemberta4.utils import is_main_process, print0
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def run_instruction_experiment(args: SimpleNamespace, task_name: str) -> None:

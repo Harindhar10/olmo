@@ -1,11 +1,7 @@
 import gc
-import os
-import sys
 from datetime import datetime
 from types import SimpleNamespace
 from typing import List
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytorch_lightning as pl
 import torch
@@ -19,8 +15,6 @@ from chemberta4.callbacks import WandbCallback
 from chemberta4.data import PretrainingDataset
 from chemberta4.trainer import OLMoPretrainer
 from chemberta4.utils import is_main_process, print0
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def load_smiles_data(args: SimpleNamespace) -> List[str]:
