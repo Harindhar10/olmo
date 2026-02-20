@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from typing import Optional, Dict, List, Any
+from transformers import PreTrainedTokenizerBase
 
 
 class MoleculeNetDataset(Dataset):
@@ -24,7 +25,7 @@ class MoleculeNetDataset(Dataset):
     def __init__(
         self,
         df: pd.DataFrame,
-        tokenizer,
+        tokenizer: PreTrainedTokenizerBase,
         task_columns: List[str],
         prompt: str,
         task_type: str,
@@ -175,7 +176,7 @@ class PretrainingDataset(Dataset):
     def __init__(
         self,
         smiles_list: List[str],
-        tokenizer,
+        tokenizer: PreTrainedTokenizerBase,
         max_len: int = 256,
         prefix: str = "SMILES: ",
     ) -> None:
@@ -250,7 +251,7 @@ class InstructionDataset(Dataset):
     def __init__(
         self,
         data: List[Dict],
-        tokenizer,
+        tokenizer: PreTrainedTokenizerBase,
         max_len: int = 512,
     ) -> None:
         """Initialise InstructionDataset.

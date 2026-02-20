@@ -30,32 +30,6 @@ class OLMoClassifier(pl.LightningModule):
     Supports single-task and multi-task classification.
     Can use either a classification head or LM head (Yes/No prediction).
     Supports QLoRA (4-bit), LoRA, and full finetuning.
-
-    Parameters
-    ----------
-    model_name : str
-        HuggingFace model identifier.
-    num_tasks : int
-        Number of classification tasks/labels.
-    task_type : str
-        One of 'single_task' or 'multi_task'.
-    use_lm_head : bool
-        If 'True', use Yes/No LM-head prediction instead of a classification head.
-    finetune_strategy : str
-        One of 'qlora' (4-bit + LoRA), 'lora' (LoRA only), or
-        'full_finetune' (all parameters trainable).
-    lr : float
-        Learning rate.
-    weight_decay : float
-        Weight decay for AdamW.
-    warmup_ratio : float
-        Fraction of total steps used for linear warmup.
-    lora_r : int
-        LoRA rank.
-    lora_alpha : int
-        LoRA alpha (typically 2× rank).
-    lora_dropout : float
-        LoRA dropout rate.
     """
 
     def __init__(
@@ -72,6 +46,34 @@ class OLMoClassifier(pl.LightningModule):
         lora_alpha: int = 64,
         lora_dropout: float = 0.05,
     ):
+        """Initialise OLMoClassifier.
+
+        Parameters
+        ----------
+        model_name : str
+            HuggingFace model identifier.
+        num_tasks : int
+            Number of classification tasks/labels.
+        task_type : str
+            One of 'single_task' or 'multi_task'.
+        use_lm_head : bool
+            If 'True', use Yes/No LM-head prediction instead of a classification head.
+        finetune_strategy : str
+            One of 'qlora' (4-bit + LoRA), 'lora' (LoRA only), or
+            'full_finetune' (all parameters trainable).
+        lr : float
+            Learning rate.
+        weight_decay : float
+            Weight decay for AdamW.
+        warmup_ratio : float
+            Fraction of total steps used for linear warmup.
+        lora_r : int
+            LoRA rank.
+        lora_alpha : int
+            LoRA alpha (typically 2× rank).
+        lora_dropout : float
+            LoRA dropout rate.
+        """
         super().__init__()
         self.save_hyperparameters()
 
@@ -371,29 +373,6 @@ class OLMoRegressor(pl.LightningModule):
 
     Uses RMSE loss and supports label normalization.
     Reports denormalized metrics for interpretability.
-
-    Parameters
-    ----------
-    model_name : str
-        HuggingFace model identifier.
-    finetune_strategy : str
-        One of 'qlora', 'lora', or 'full_finetune'.
-    lr : float
-        Learning rate.
-    weight_decay : float
-        Weight decay for AdamW.
-    warmup_ratio : float
-        Fraction of total steps used for linear warmup.
-    lora_r : int
-        LoRA rank.
-    lora_alpha : int
-        LoRA alpha.
-    lora_dropout : float
-        LoRA dropout rate.
-    label_mean : float
-        Training-set label mean used for denormalization.
-    label_std : float
-        Training-set label std used for denormalization.
     """
 
     def __init__(
@@ -409,6 +388,31 @@ class OLMoRegressor(pl.LightningModule):
         label_mean: float = 0.0,
         label_std: float = 1.0,
     ):
+        """Initialise OLMoRegressor.
+
+        Parameters
+        ----------
+        model_name : str
+            HuggingFace model identifier.
+        finetune_strategy : str
+            One of 'qlora', 'lora', or 'full_finetune'.
+        lr : float
+            Learning rate.
+        weight_decay : float
+            Weight decay for AdamW.
+        warmup_ratio : float
+            Fraction of total steps used for linear warmup.
+        lora_r : int
+            LoRA rank.
+        lora_alpha : int
+            LoRA alpha.
+        lora_dropout : float
+            LoRA dropout rate.
+        label_mean : float
+            Training-set label mean used for denormalization.
+        label_std : float
+            Training-set label std used for denormalization.
+        """
         super().__init__()
         self.save_hyperparameters()
 
@@ -646,27 +650,6 @@ class OLMoPretrainer(pl.LightningModule):
 
     Used for pretraining on SMILES (ZINC20, PubChem) or
     instruction tuning (USPTO).
-
-    Parameters
-    ----------
-    model_name : str
-        HuggingFace model identifier or path to a pretrained model.
-    finetune_strategy : str
-        One of 'qlora', 'lora', or 'full_finetune'.
-    lr : float
-        Learning rate.
-    weight_decay : float
-        Weight decay.
-    warmup_ratio : float
-        Fraction of total steps used for linear warmup.
-    lora_r : int
-        LoRA rank.
-    lora_alpha : int
-        LoRA alpha.
-    lora_dropout : float
-        LoRA dropout rate.
-    gradient_checkpointing : bool
-        Whether to enable gradient checkpointing to reduce VRAM usage.
     """
 
     def __init__(
@@ -681,6 +664,29 @@ class OLMoPretrainer(pl.LightningModule):
         lora_dropout: float = 0.05,
         gradient_checkpointing: bool = True,
     ):
+        """Initialise OLMoPretrainer.
+
+        Parameters
+        ----------
+        model_name : str
+            HuggingFace model identifier or path to a pretrained model.
+        finetune_strategy : str
+            One of 'qlora', 'lora', or 'full_finetune'.
+        lr : float
+            Learning rate.
+        weight_decay : float
+            Weight decay.
+        warmup_ratio : float
+            Fraction of total steps used for linear warmup.
+        lora_r : int
+            LoRA rank.
+        lora_alpha : int
+            LoRA alpha.
+        lora_dropout : float
+            LoRA dropout rate.
+        gradient_checkpointing : bool
+            Whether to enable gradient checkpointing to reduce VRAM usage.
+        """
         super().__init__()
         self.save_hyperparameters()
 

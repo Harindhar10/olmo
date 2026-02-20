@@ -8,6 +8,7 @@ Each wrapper handles the task-specific output head and loss computation.
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
+from transformers import PreTrainedTokenizerBase
 
 
 def last_token_pool(
@@ -49,15 +50,6 @@ class ClassificationHead(nn.Module):
 
     Supports single-task and multi-task classification.
     Uses CrossEntropy for single_task, BCEWithLogits for multi_task.
-
-    Parameters
-    ----------
-    backbone : nn.Module
-        The base model (OLMo with LoRA).
-    num_tasks : int
-        Number of output classes/tasks.
-    task_type : str
-        'single_task' or 'multi_task'.
     """
 
     def __init__(
@@ -66,6 +58,17 @@ class ClassificationHead(nn.Module):
         num_tasks: int = 1,
         task_type: str = "single_task"
     ):
+        """Initialise ClassificationHead.
+
+        Parameters
+        ----------
+        backbone : nn.Module
+            The base model (OLMo with LoRA).
+        num_tasks : int
+            Number of output classes/tasks.
+        task_type : str
+            'single_task' or 'multi_task'.
+        """
         super().__init__()
         self.backbone = backbone
         self.task_type = task_type
@@ -129,7 +132,22 @@ class ClassificationHead(nn.Module):
         labels: torch.Tensor,
         label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Compute task-appropriate loss."""
+        """Compute the task-appropriate classification loss.
+
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Model output logits.
+        labels : torch.Tensor
+            Ground-truth labels.
+        label_mask : torch.Tensor, optional
+            Boolean mask for valid labels (multi_task only).
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar loss tensor.
+        """
         if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
@@ -147,26 +165,28 @@ class CausalLMClassificationHead(nn.Module):
 
     Instead of a separate classification head, this approach leverages
     the pretrained LM head to predict 'Yes' or 'No' tokens.
-
-    Parameters
-    ----------
-    model : nn.Module
-        The causal LM model (OLMo with LoRA).
-    tokenizer : PreTrainedTokenizerBase
-        Tokenizer for encoding Yes/No tokens.
-    num_tasks : int
-        Number of tasks (for multi_task).
-    task_type : str
-        'single_task' or 'multi_task'.
     """
 
     def __init__(
         self,
         model: nn.Module,
-        tokenizer,
+        tokenizer: PreTrainedTokenizerBase,
         num_tasks: int = 1,
         task_type: str = "single_task"
     ):
+        """Initialise CausalLMClassificationHead.
+
+        Parameters
+        ----------
+        model : nn.Module
+            The causal LM model (OLMo with LoRA).
+        tokenizer : PreTrainedTokenizerBase
+            Tokenizer for encoding Yes/No tokens.
+        num_tasks : int
+            Number of tasks (for multi_task).
+        task_type : str
+            'single_task' or 'multi_task'.
+        """
         super().__init__()
         self.model = model
         self.task_type = task_type
@@ -246,7 +266,22 @@ class CausalLMClassificationHead(nn.Module):
         labels: torch.Tensor,
         label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Compute task-appropriate loss."""
+        """Compute the task-appropriate classification loss.
+
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Model output logits.
+        labels : torch.Tensor
+            Ground-truth labels.
+        label_mask : torch.Tensor, optional
+            Boolean mask for valid labels (multi_task only).
+
+        Returns
+        -------
+        torch.Tensor
+            Loss tensor.
+        """
         if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
@@ -261,14 +296,16 @@ class RegressionHead(nn.Module):
     """Regression head with last-token pooling.
 
     Uses RMSE loss by default.
-
-    Parameters
-    ----------
-    backbone : nn.Module
-        The base model (OLMo with LoRA).
     """
 
     def __init__(self, backbone: nn.Module):
+        """Initialise RegressionHead.
+
+        Parameters
+        ----------
+        backbone : nn.Module
+            The base model (OLMo with LoRA).
+        """
         super().__init__()
         self.backbone = backbone
         self.regressor = nn.Linear(backbone.config.hidden_size, 1)
