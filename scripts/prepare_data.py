@@ -112,12 +112,6 @@ def generate_deepchem_splits(dataset_names: List,
     logging.info("All datasets processed.")
 
 
-def clean_smiles_by_length(df, smiles_column="smiles", max_length=200):
-    """
-    Removes rows where the SMILES string exceeds `max_length`.
-    """
-    return df[df[smiles_column].str.len() <= max_length].reset_index(drop=True)
-
 def main():
 
     argparser = argparse.ArgumentParser()
