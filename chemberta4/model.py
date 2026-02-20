@@ -14,18 +14,22 @@ def last_token_pool(
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor
 ) -> torch.Tensor:
-    """
-    Extract the last non-padding token representation.
+    """Extract the last non-padding token representation.
 
     For decoder-only models like OLMo, we use the last token's representation
     for classification/regression tasks.
 
-    Args:
-        hidden_states: [batch, seq_len, hidden_size]
-        attention_mask: [batch, seq_len]
+    Parameters
+    ----------
+    hidden_states : torch.Tensor
+        Hidden states of shape '[batch, seq_len, hidden_size]'.
+    attention_mask : torch.Tensor
+        Attention mask of shape '[batch, seq_len]'.
 
-    Returns:
-        Pooled output: [batch, hidden_size]
+    Returns
+    -------
+    torch.Tensor
+        Pooled output of shape '[batch, hidden_size]'.
     """
     sequence_lengths = attention_mask.sum(dim=1) - 1
     batch_size = hidden_states.shape[0]
@@ -41,16 +45,19 @@ def last_token_pool(
 
 
 class ClassificationHead(nn.Module):
-    """
-    Classification head with last-token pooling.
+    """Classification head with last-token pooling.
 
     Supports single-task and multi-task classification.
     Uses CrossEntropy for single_task, BCEWithLogits for multi_task.
 
-    Args:
-        backbone: The base model (OLMo with LoRA)
-        num_tasks: Number of output classes/tasks
-        task_type: 'single_task' or 'multi_task'
+    Parameters
+    ----------
+    backbone : nn.Module
+        The base model (OLMo with LoRA).
+    num_tasks : int
+        Number of output classes/tasks.
+    task_type : str
+        'single_task' or 'multi_task'.
     """
 
     def __init__(
@@ -80,18 +87,24 @@ class ClassificationHead(nn.Module):
         labels: Optional[torch.Tensor] = None,
         label_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Forward pass.
+        """Run the forward pass for classification.
 
-        Args:
-            input_ids: [batch, seq_len]
-            attention_mask: [batch, seq_len]
-            labels: [batch] for single_task, [batch, num_tasks] for multi_task
-            label_mask: [batch, num_tasks] mask for missing labels (multi_task)
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '[batch, seq_len]'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '[batch, seq_len]'.
+        labels : torch.Tensor, optional
+            Labels of shape '[batch]' for single_task or '[batch, num_tasks]' for multi_task.
+        label_mask : torch.Tensor, optional
+            Boolean mask of shape '[batch, num_tasks]' for missing labels (multi_task).
 
-        Returns:
-            logits: [batch, 2] for single_task, [batch, num_tasks] for multi_task
-            loss: scalar loss if labels provided
+        Returns
+        -------
+        Tuple[torch.Tensor, Optional[torch.Tensor]]
+            Logits of shape '[batch, 2]' for single_task or '[batch, num_tasks]' for multi_task,
+            and a scalar loss tensor if labels are provided, else None.
         """
         out = self.backbone(
             input_ids=input_ids,
@@ -130,17 +143,21 @@ class ClassificationHead(nn.Module):
 
 
 class CausalLMClassificationHead(nn.Module):
-    """
-    Use the LM head to predict Yes/No tokens for classification.
+    """Use the LM head to predict Yes/No tokens for classification.
 
     Instead of a separate classification head, this approach leverages
-    the pretrained LM head to predict "Yes" or "No" tokens.
+    the pretrained LM head to predict 'Yes' or 'No' tokens.
 
-    Args:
-        model: The causal LM model (OLMo with LoRA)
-        tokenizer: Tokenizer for encoding Yes/No tokens
-        num_tasks: Number of tasks (for multi_task)
-        task_type: 'single_task' or 'multi_task'
+    Parameters
+    ----------
+    model : nn.Module
+        The causal LM model (OLMo with LoRA).
+    tokenizer : PreTrainedTokenizerBase
+        Tokenizer for encoding Yes/No tokens.
+    num_tasks : int
+        Number of tasks (for multi_task).
+    task_type : str
+        'single_task' or 'multi_task'.
     """
 
     def __init__(
@@ -172,18 +189,24 @@ class CausalLMClassificationHead(nn.Module):
         labels: Optional[torch.Tensor] = None,
         label_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Forward pass using LM head for Yes/No prediction.
+        """Run the forward pass using LM head for Yes/No prediction.
 
-        Args:
-            input_ids: [batch, seq_len]
-            attention_mask: [batch, seq_len]
-            labels: [batch] for single_task, [batch, num_tasks] for multi_task
-            label_mask: [batch, num_tasks] mask for missing labels
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '[batch, seq_len]'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '[batch, seq_len]'.
+        labels : torch.Tensor, optional
+            Labels of shape '[batch]' for single_task or '[batch, num_tasks]' for multi_task.
+        label_mask : torch.Tensor, optional
+            Boolean mask of shape '[batch, num_tasks]' for missing labels.
 
-        Returns:
-            logits: [batch, 2] for single_task, [batch, num_tasks] for multi_task
-            loss: scalar loss if labels provided
+        Returns
+        -------
+        Tuple[torch.Tensor, Optional[torch.Tensor]]
+            Logits of shape '[batch, 2]' for single_task or '[batch, num_tasks]' for multi_task,
+            and a scalar loss tensor if labels are provided, else None.
         """
         outputs = self.model(
             input_ids=input_ids,
@@ -235,13 +258,14 @@ class CausalLMClassificationHead(nn.Module):
 
 
 class RegressionHead(nn.Module):
-    """
-    Regression head with last-token pooling.
+    """Regression head with last-token pooling.
 
     Uses RMSE loss by default.
 
-    Args:
-        backbone: The base model (OLMo with LoRA)
+    Parameters
+    ----------
+    backbone : nn.Module
+        The base model (OLMo with LoRA).
     """
 
     def __init__(self, backbone: nn.Module):
@@ -259,17 +283,21 @@ class RegressionHead(nn.Module):
         attention_mask: torch.Tensor,
         labels: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Forward pass for regression.
+        """Run the forward pass for regression.
 
-        Args:
-            input_ids: [batch, seq_len]
-            attention_mask: [batch, seq_len]
-            labels: [batch] normalized regression targets
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '[batch, seq_len]'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '[batch, seq_len]'.
+        labels : torch.Tensor, optional
+            Normalized regression targets of shape '[batch]'.
 
-        Returns:
-            predictions: [batch]
-            loss: scalar RMSE loss if labels provided
+        Returns
+        -------
+        Tuple[torch.Tensor, Optional[torch.Tensor]]
+            Predicted values of shape '[batch]' and scalar RMSE loss if labels are provided, else None.
         """
         out = self.backbone(
             input_ids=input_ids,
