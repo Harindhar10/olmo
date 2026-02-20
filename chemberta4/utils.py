@@ -4,6 +4,7 @@ Distributed training utilities following nanochat patterns.
 Simple, explicit utilities for rank-aware operations.
 """
 
+import logging
 import os
 import random
 from types import SimpleNamespace
@@ -11,6 +12,21 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+
+
+logger = logging.getLogger(__name__)
+
+
+def log0(msg: str) -> None:
+    """Log a message only on rank 0 to avoid duplicate output in DDP.
+
+    Parameters
+    ----------
+    msg : str
+        Message to log via :func:`logging.Logger.info`.
+    """
+    if is_main_process():
+        logger.info(msg)
 
 
 def get_rank() -> int:
@@ -33,20 +49,6 @@ def is_main_process() -> bool:
         'True' if rank is 0, 'False' otherwise.
     """
     return get_rank() == 0
-
-
-def print0(*args: Any, **kwargs: Any) -> None:
-    """Print only on rank 0 to avoid duplicate output in DDP.
-
-    Parameters
-    ----------
-    *args : Any
-        Positional arguments forwarded to :func:`print`.
-    **kwargs : Any
-        Keyword arguments forwarded to :func:`print`.
-    """
-    if is_main_process():
-        print(*args, **kwargs)
 
 
 def set_seed(seed: int = 42) -> None:

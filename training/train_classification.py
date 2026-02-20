@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoClassifier
-from chemberta4.utils import get_task, is_main_process, print0
+from chemberta4.utils import get_task, is_main_process, log0
 
 
 def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None:
@@ -31,8 +31,8 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     """
     # Get task config
     task_config = get_task(task_name)
-    print0(f"\nTask: {task_name} ({task_config.task_type})")
-    print0(f"Columns: {task_config.task_columns[:3]}{'...' if len(task_config.task_columns) > 3 else ''}")
+    log0(f"Task: {task_name} ({task_config.task_type})")
+    log0(f"Columns: {task_config.task_columns[:3]}")
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -75,7 +75,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         args.use_lm_head,
     )
 
-    print0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+    log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
 
     # DataLoaders
     loader_kwargs = {
@@ -169,13 +169,13 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     )
 
     # Train
-    print0("Starting training...")
-    print0(f"Model approach: {'LM Head (Yes/No Token)' if args.use_lm_head else 'Classification Head'}")
-    print0(f"Finetune strategy: {args.finetune_strategy}")
+    log0("Starting training...")
+    log0(f"Model approach: {'LM Head (Yes/No Token)' if args.use_lm_head else 'Classification Head'}")
+    log0(f"Finetune strategy: {args.finetune_strategy}")
     trainer.fit(model, train_loader, val_loader)
 
     # Test
-    print0("\nRunning test evaluation...")
+    log0("Running test evaluation...")
     trainer.test(model, test_loader)
 
     # Finalize tracker
@@ -188,14 +188,14 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         wandb.finish()
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-        print0(f"\nDone! Best RMSE: {checkpoint_callback.best_model_score:.4f}")
+        log0(f"Done! Best RMSE: {checkpoint_callback.best_model_score:.4f}")
 
         if args.delete_checkpoint:
             import shutil
 
             checkpoint_dir = f"{args.output_dir}/{task_name}/{timestamp}"
             shutil.rmtree(checkpoint_dir, ignore_errors=True)
-            print0(f"Deleted checkpoint directory: {checkpoint_dir}")
+            log0(f"Deleted checkpoint directory: {checkpoint_dir}")
 
     # Cleanup GPU memory for next task
     del model, trainer

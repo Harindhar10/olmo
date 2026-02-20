@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoRegressor
-from chemberta4.utils import get_task, is_main_process, print0
+from chemberta4.utils import get_task, is_main_process, log0
 
 
 def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
@@ -33,8 +33,8 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     task_config = get_task(task_name)
     assert task_config.experiment_type == "regression", f"Task {task_name} is not a regression task"
 
-    print0(f"\nTask: {task_name}")
-    print0(f"Target column: {task_config.target_column}")
+    log0(f"Task: {task_name}")
+    log0(f"Target column: {task_config.target_column}")
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -58,7 +58,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
 
     # Get normalization stats from training set
     label_stats = train_ds.get_label_stats()
-    print0(f"Label normalization - Mean: {label_stats['mean']:.4f}, Std: {label_stats['std']:.4f}")
+    log0(f"Label normalization - Mean: {label_stats['mean']:.4f}, Std: {label_stats['std']:.4f}")
 
     # Create val/test datasets with training stats
     val_ds = MoleculeNetDataset(
@@ -82,7 +82,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         label_stats=label_stats,
     )
 
-    print0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+    log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
 
     # DataLoaders
     loader_kwargs = {
@@ -174,11 +174,11 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     )
 
     # Train
-    print0("Starting training...")
+    log0("Starting training...")
     trainer.fit(model, train_loader, val_loader)
 
     # Test
-    print0("\nRunning test evaluation...")
+    log0("Running test evaluation...")
     trainer.test(model, test_loader)
 
     # Finalize tracker
@@ -191,14 +191,14 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         wandb.finish()
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-        print0(f"\nDone! Best RMSE: {checkpoint_callback.best_model_score:.4f}")
+        log0(f"Done! Best RMSE: {checkpoint_callback.best_model_score:.4f}")
 
         if args.delete_checkpoint:
             import shutil
 
             checkpoint_dir = f"{args.output_dir}/{task_name}/{timestamp}"
             shutil.rmtree(checkpoint_dir, ignore_errors=True)
-            print0(f"Deleted checkpoint directory: {checkpoint_dir}")
+            log0(f"Deleted checkpoint directory: {checkpoint_dir}")
 
     # Cleanup GPU memory for next task
     del model, trainer

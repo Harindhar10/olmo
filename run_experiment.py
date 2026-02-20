@@ -35,7 +35,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import pytorch_lightning as pl
 
-from chemberta4.utils import get_task, prepare_config, print0, set_seed
+from chemberta4.utils import get_task, log0, prepare_config, set_seed
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,9 +112,9 @@ def main() -> None:
         set_seed(seed)
         pl.seed_everything(seed, workers=True)
 
-        print0(f"\n{'='*60}")
-        print0(f"Running {task.experiment_type} experiment: {dataset_name}")
-        print0(f"{'='*60}")
+        log0("=" * 60)
+        log0(f"Running {task.experiment_type} experiment: {dataset_name}")
+        log0("=" * 60)
 
         if task.experiment_type == "classification":
             from training.train_classification import run_classification_experiment
@@ -135,7 +135,7 @@ def main() -> None:
         else:
             raise ValueError(f"Unknown experiment type '{task.experiment_type}' for dataset '{dataset_name}'")
 
-    print0("\nAll experiments complete!")
+    log0("All experiments complete!")
 
 
 if __name__ == "__main__":

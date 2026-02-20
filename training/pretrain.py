@@ -14,7 +14,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from chemberta4.callbacks import WandbCallback
 from chemberta4.data import PretrainingDataset
 from chemberta4.trainer import OLMoPretrainer
-from chemberta4.utils import is_main_process, print0
+from chemberta4.utils import is_main_process, log0
 
 
 def load_smiles_data(args: SimpleNamespace) -> List[str]:
@@ -69,9 +69,9 @@ def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
     # Set dataset in args for load_smiles_data compatibility
     args.dataset = task_name
 
-    print0(f"Loading dataset: {args.dataset}")
+    log0(f"Loading dataset: {args.dataset}")
     smiles_list = load_smiles_data(args)
-    print0(f"Loaded {len(smiles_list)} SMILES strings")
+    log0(f"Loaded {len(smiles_list)} SMILES strings")
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
@@ -85,7 +85,7 @@ def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
 
     train_dataset = PretrainingDataset(train_smiles, tokenizer, args.max_len)
     val_dataset = PretrainingDataset(val_smiles, tokenizer, args.max_len)
-    print0(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
+    log0(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
 
     # DataLoaders
     loader_kwargs = {
@@ -157,7 +157,7 @@ def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
     )
 
     # Train
-    print0(f"Starting pretraining on {args.dataset}...")
+    log0(f"Starting pretraining on {args.dataset}...")
     trainer.fit(model, train_dataloader, val_dataloader)
 
     # Finalize tracker
@@ -170,19 +170,19 @@ def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
 
     # Merge and push to hub
     if trainer.is_global_zero and args.hub_name:
-        print0("Training complete. Saving adapter...")
+        log0("Training complete. Saving adapter...")
 
         adapter_path = f"{args.output_dir}/{args.dataset}_adapter"
         model.model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)
 
-        print0("Freeing VRAM for merge...")
+        log0("Freeing VRAM for merge...")
         del model
         del trainer
         gc.collect()
         torch.cuda.empty_cache()
 
-        print0("Loading base model in FP16 for merging...")
+        log0("Loading base model in FP16 for merging...")
         base_model = AutoModelForCausalLM.from_pretrained(
             args.model_name,
             return_dict=True,
@@ -191,21 +191,21 @@ def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
             trust_remote_code=True,
         )
 
-        print0("Loading adapter and merging...")
+        log0("Loading adapter and merging...")
         model_to_merge = PeftModel.from_pretrained(base_model, adapter_path)
         model_to_merge = model_to_merge.merge_and_unload()
 
-        print0(f"Pushing merged model to Hub: {args.hub_name}")
+        log0(f"Pushing merged model to Hub: {args.hub_name}")
         model_to_merge.push_to_hub(args.hub_name)
         tokenizer.push_to_hub(args.hub_name)
 
-        print0(f"Done! Model available at: https://huggingface.co/{args.hub_name}")
+        log0(f"Done! Model available at: https://huggingface.co/{args.hub_name}")
     elif trainer.is_global_zero:
         # Just save locally
         adapter_path = f"{args.output_dir}/{args.dataset}_adapter"
         model.model.save_pretrained(adapter_path)
         tokenizer.save_pretrained(adapter_path)
-        print0(f"Adapter saved to: {adapter_path}")
+        log0(f"Adapter saved to: {adapter_path}")
 
     # Cleanup
     del model, trainer
