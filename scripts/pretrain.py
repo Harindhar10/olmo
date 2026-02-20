@@ -2,6 +2,7 @@ import gc
 import os
 import sys
 from datetime import datetime
+from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,8 +22,19 @@ from chemberta4.utils import is_main_process, print0
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def load_smiles_data(args):
-    """Load SMILES dataset based on args."""
+def load_smiles_data(args) -> List:
+    """Load SMILES dataset from huggingface based on args.
+    
+    Parameters
+    ----------
+    args:
+        data loading arguments
+    
+    Returns
+    -------
+    List 
+        A list of smiles strings
+    """
     if args.dataset == "zinc20":
         # ZINC20 dataset from HuggingFace
         dataset = load_dataset("zpn/zinc20", split="train", streaming=True, trust_remote_code=True).take(args.num_samples)
@@ -48,8 +60,26 @@ def load_smiles_data(args):
     return smiles_list
 
 
-def run_pretraining_experiment(args, task_name):
-    """Run pretraining for a single dataset."""
+def run_pretraining_experiment(args, task_name: str) -> None:
+    """
+    Run pretraining on a smiles dataset.
+
+    TODO: add type annotation for args
+    What it does:
+        - Creates data loaders by downloading data from huggingface
+        - Instantiates model class (OLMoPretrainer)
+        - Instantiates callbacks for learning rate warmup and logging
+        - Optional wandb logging and saving
+        - Model training and saving to huggingface
+        - Model cleanup
+
+    Parameters
+    ----------
+    args: 
+        training arguments
+    task: str
+        name of the dataset to run experiment on
+    """
     # Set dataset in args for load_smiles_data compatibility
     args.dataset = task_name
 

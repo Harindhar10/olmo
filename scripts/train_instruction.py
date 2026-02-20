@@ -21,8 +21,25 @@ from chemberta4.utils import is_main_process, print0
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def run_instruction_experiment(args, task_name):
-    """Run instruction tuning for a single dataset."""
+def run_instruction_experiment(args, task_name: str) -> None:
+    """Run instruction tuning on an instruction dataset.
+
+    TODO: add type annotation for args
+    What it does:
+        - Creates data loaders by downloading data from huggingface
+        - Instantiates model class (OLMoPretrainer)
+        - Instantiates callbacks for learning rate warmup and logging
+        - Optional wandb logging and saving
+        - Model training and saving to huggingface
+        - Model cleanup
+
+    Parameters
+    ----------
+    args: 
+        training arguments
+    task: str
+        name of the dataset to run experiment on
+    """
     print0(f"Loading dataset: {args.dataset}")
 
     # Load dataset (streaming)
