@@ -58,13 +58,13 @@ Download MoleculeNet datasets and create scaffold splits:
 
 ```bash
 # Single dataset
-python scripts/prepare_data.py \
+python training/prepare_data.py \
     --split_type deepchem \
     --datasets bbbp \
     --data_dir datasets/deepchem_splits
 
 # Multiple datasets at once
-python scripts/prepare_data.py \
+python training/prepare_data.py \
     --split_type deepchem \
     --datasets bbbp bace hiv clintox tox21 sider delaney freesolv lipophilicity \
     --data_dir datasets/deepchem_splits
@@ -78,7 +78,7 @@ This creates `train.csv`, `valid.csv`, and `test.csv` under `datasets/deepchem_s
 
 ```bash
 # QLoRA (default) — automatically scales across all available GPUs
-python scripts/train_classification.py \
+python training/train_classification.py \
     --task bbbp \
     --use_qlora \
     --batch_size 4 \
@@ -86,13 +86,13 @@ python scripts/train_classification.py \
     --epochs 15
 
 # LM-head approach (Yes/No token prediction instead of a linear head)
-python scripts/train_classification.py \
+python training/train_classification.py \
     --task bace \
     --use_lm_head \
     --use_qlora
 
 # Full fine-tuning (no LoRA)
-python scripts/train_classification.py \
+python training/train_classification.py \
     --task clintox \
     --full_finetune \
     --lr 1e-5 \
@@ -102,14 +102,14 @@ python scripts/train_classification.py \
 **Regression**:
 
 ```bash
-python scripts/train_regression.py --task clearance --use_qlora --epochs 30
-python scripts/train_regression.py --task esol --use_qlora
+python training/train_regression.py --task clearance --use_qlora --epochs 30
+python training/train_regression.py --task esol --use_qlora
 ```
 
 **Pretraining** (causal LM on SMILES):
 
 ```bash
-python scripts/pretrain.py \
+python training/pretrain.py \
     --dataset zinc20 \
     --num_samples 1000000 \
     --epochs 1
@@ -118,7 +118,7 @@ python scripts/pretrain.py \
 **Instruction tuning** (reaction prediction):
 
 ```bash
-python scripts/train_instruction.py \
+python training/train_instruction.py \
     --dataset OpenMol/USPTO_1k_TPL-SFT \
     --num_samples 10000
 ```
@@ -144,7 +144,7 @@ All training scripts automatically use DDP across every available GPU (`devices=
 Disable LoRA and train all parameters. Requires significantly more VRAM.
 
 ```bash
-python scripts/train_classification.py --task bbbp --full_finetune --lr 1e-5
+python training/train_classification.py --task bbbp --full_finetune --lr 1e-5
 ```
 
 ### Classification head options
@@ -160,19 +160,19 @@ For best results, chain the stages:
 
 ```bash
 # Stage 1: Pretrain on SMILES
-python scripts/pretrain.py \
+python training/pretrain.py \
     --dataset zinc20 \
     --num_samples 10000000 \
     --hub_name youruser/OLMo-7B-ZINC20
 
 # Stage 2: Instruction-tune on reactions
-python scripts/train_instruction.py \
+python training/train_instruction.py \
     --model_name youruser/OLMo-7B-ZINC20 \
     --dataset OpenMol/USPTO_1k_TPL-SFT \
     --hub_name youruser/OLMo-7B-ZINC-USPTO
 
 # Stage 3: Fine-tune on downstream task
-python scripts/train_classification.py \
+python training/train_classification.py \
     --task bbbp \
     --model_name youruser/OLMo-7B-ZINC-USPTO
 ```
@@ -197,7 +197,7 @@ register_task(TaskConfig(
 Then prepare your data (a CSV with `smiles` and label columns) and train:
 
 ```bash
-python scripts/train_classification.py --task my_dataset --data_dir path/to/splits
+python training/train_classification.py --task my_dataset --data_dir path/to/splits
 ```
 
 ## Repository Structure
@@ -215,7 +215,7 @@ chemberta4/
 │       ├── classification.py  # BBBP, BACE, HIV, ClinTox, SIDER, Tox21
 │       ├── regression.py      # ESOL, FreeSolv, Lipophilicity, Clearance
 │       └── generation.py      # ZINC20, PubChem, USPTO
-├── scripts/                   # CLI entry points
+├── training/                   # CLI entry points
 │   ├── prepare_data.py        # Download & scaffold-split datasets
 │   ├── train_classification.py
 │   ├── train_regression.py

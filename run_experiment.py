@@ -115,19 +115,19 @@ def main() -> None:
         print0(f"{'='*60}")
 
         if task.experiment_type == "classification":
-            from scripts.train_classification import run_classification_experiment
+            from training.train_classification import run_classification_experiment
             run_classification_experiment(config, dataset_name)
 
         elif task.experiment_type == "regression":
-            from scripts.train_regression import run_regression_experiment
+            from training.train_regression import run_regression_experiment
             run_regression_experiment(config, dataset_name)
 
         elif task.experiment_type == "pretraining":
-            from scripts.pretrain import run_pretraining_experiment
+            from training.pretrain import run_pretraining_experiment
             run_pretraining_experiment(config, dataset_name)
 
         elif task.experiment_type == "instruction":
-            from scripts.train_instruction import run_instruction_experiment
+            from training.train_instruction import run_instruction_experiment
             run_instruction_experiment(config, dataset_name)
 
         else:
