@@ -28,8 +28,7 @@ lora_dropout: 0.05
 # Infrastructure
 seed: 42
 output_dir: ./outputs
-tracker: mlflow
-mlflow_uri: ./mlruns
+wandb: false
 wandb_project: null
 wandb_entity: null
 wandb_key: null

@@ -28,7 +28,7 @@ from pytorch_lightning.callbacks import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from chemberta4.callbacks import MLflowCallback, WandbCallback
+from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeDataset
 from chemberta4.trainer import OLMoRegressor
 from chemberta4.utils import get_task, is_main_process, print0
@@ -125,7 +125,7 @@ def run_regression_experiment(args, task_name):
             verbose=True,
         ),
         LearningRateMonitor(logging_interval="step"),
-        MLflowCallback() if args.tracker == "mlflow" else WandbCallback(),
+        *([ WandbCallback() ] if args.wandb else []),
         ModelCheckpoint(
             dirpath=f"{args.output_dir}/{task_name}/{timestamp}",
             filename="best-{val/rmse:.4f}",
@@ -140,44 +140,28 @@ def run_regression_experiment(args, task_name):
     num_devices = torch.cuda.device_count() or 1
 
     # Tracker init (rank 0 only)
-    if is_main_process():
-        if args.tracker == "mlflow":
-            import mlflow
+    if is_main_process() and args.wandb:
+        import wandb
 
-            mlflow.set_tracking_uri(args.mlflow_uri)
-            mlflow.set_experiment(f"chemberta4-{task_name}")
-            mlflow.start_run(run_name=f"{task_name}_{timestamp}")
-            log_params = {k: v for k, v in vars(args).items() if k != "wandb_key"}
-            mlflow.log_params(log_params)
-            mlflow.log_params({
-                "task": task_name,
-                "label_mean": label_stats["mean"],
-                "label_std": label_stats["std"],
-                "num_devices": num_devices,
-                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
-            })
-        elif args.tracker == "wandb":
-            import wandb
+        if args.wandb_key:
+            wandb.login(key=args.wandb_key)
 
-            if args.wandb_key:
-                wandb.login(key=args.wandb_key)
-
-            project_name = args.wandb_project or f"chemberta4-{task_name}"
-            log_params = {k: v for k, v in vars(args).items() if k not in ("wandb_key", "mlflow_uri")}
-            wandb.init(
-                entity=args.wandb_entity,
-                project=project_name,
-                name=f"{task_name}_{timestamp}",
-                config=log_params,
-                reinit=True,
-            )
-            wandb.config.update({
-                "task": task_name,
-                "label_mean": label_stats["mean"],
-                "label_std": label_stats["std"],
-                "num_devices": num_devices,
-                "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
-            })
+        project_name = args.wandb_project or f"chemberta4-{task_name}"
+        log_params = {k: v for k, v in vars(args).items() if k != "wandb_key"}
+        wandb.init(
+            entity=args.wandb_entity,
+            project=project_name,
+            name=f"{task_name}_{timestamp}",
+            config=log_params,
+            reinit=True,
+        )
+        wandb.config.update({
+            "task": task_name,
+            "label_mean": label_stats["mean"],
+            "label_std": label_stats["std"],
+            "num_devices": num_devices,
+            "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
+        })
 
     # Trainer
     trainer = pl.Trainer(
@@ -204,20 +188,13 @@ def run_regression_experiment(args, task_name):
     trainer.test(model, test_loader)
 
     # Finalize tracker
-    if is_main_process():
-        if args.tracker == "mlflow":
-            import mlflow
+    if is_main_process() and args.wandb:
+        import wandb
 
-            for key, value in trainer.callback_metrics.items():
-                mlflow.log_metric(f"final_{key.replace('/', '_')}", float(value))
-            mlflow.end_run()
-        elif args.tracker == "wandb":
-            import wandb
-
-            for key, value in trainer.callback_metrics.items():
-                metric_name = f"final_{key.replace('/', '_')}"
-                wandb.log({metric_name: float(value)})
-            wandb.finish()
+        for key, value in trainer.callback_metrics.items():
+            metric_name = f"final_{key.replace('/', '_')}"
+            wandb.log({metric_name: float(value)})
+        wandb.finish()
 
         checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
         print0(f"\nDone! Best RMSE: {checkpoint_callback.best_model_score:.4f}")

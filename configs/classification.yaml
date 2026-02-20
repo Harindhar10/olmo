@@ -26,8 +26,7 @@ num_workers: 4
 seed: 42
 output_dir: ./outputs
 delete_checkpoint: false
-tracker: mlflow
-mlflow_uri: ./mlruns
+wandb: false
 wandb_project: null
 wandb_entity: null
 wandb_key: null
