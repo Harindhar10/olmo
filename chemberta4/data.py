@@ -28,6 +28,7 @@ class MoleculeNetDataset(Dataset):
         task_columns: List[str],
         prompt: str,
         task_type: str,
+        experiment_type: str,
         max_len: int = 128,
         use_lm_head: bool = False,
         label_stats: Optional[Dict[str, float]] = None,
@@ -46,7 +47,9 @@ class MoleculeNetDataset(Dataset):
         prompt : str
             Task-specific prompt text prepended to each molecule.
         task_type : str
-            One of 'single_task', 'multi_task', or 'regression'.
+            One of 'single_task' or 'multi_task' (for classification).
+        experiment_type : str
+            One of 'classification' or 'regression'.
         max_len : int
             Maximum token sequence length for truncation/padding.
         use_lm_head : bool
@@ -57,8 +60,9 @@ class MoleculeNetDataset(Dataset):
         smiles_column : str
             Name of the column containing SMILES strings.
         """
-        
+
         self.task_type = task_type
+        self.experiment_type = experiment_type
         self.num_tasks = len(task_columns)
         self.label_mean = 0.0
         self.label_std = 1.0
@@ -80,7 +84,7 @@ class MoleculeNetDataset(Dataset):
             labels_array = np.nan_to_num(labels_array, nan=0.0)
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
-        elif task_type == "regression":
+        elif experiment_type == "regression":
             df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
 
@@ -98,7 +102,7 @@ class MoleculeNetDataset(Dataset):
             self.label_mask = None
 
         else:
-            raise ValueError(f"Unknown task_type: {task_type}")
+            raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
         # Build prompts
         if use_lm_head:
@@ -155,7 +159,7 @@ class MoleculeNetDataset(Dataset):
             Dict with 'mean' and 'std' if task is regression,
             otherwise None.
         """
-        if self.task_type == "regression":
+        if self.experiment_type == "regression":
             return {"mean": self.label_mean, "std": self.label_std}
         return None
 

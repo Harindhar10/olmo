@@ -31,7 +31,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     """
     # Get task config
     task_config = get_task(task_name)
-    assert task_config.task_type == "regression", f"Task {task_name} is not a regression task"
+    assert task_config.experiment_type == "regression", f"Task {task_name} is not a regression task"
 
     print0(f"\nTask: {task_name}")
     print0(f"Target column: {task_config.target_column}")
@@ -52,6 +52,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
     )
 
@@ -66,6 +67,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
         label_stats=label_stats,
     )
@@ -75,6 +77,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
         label_stats=label_stats,
     )

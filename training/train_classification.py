@@ -50,6 +50,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
         args.use_lm_head,
     )
@@ -59,6 +60,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
         args.use_lm_head,
     )
@@ -68,6 +70,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_columns,
         task_config.prompt,
         task_config.task_type,
+        task_config.experiment_type,
         args.max_len,
         args.use_lm_head,
     )
