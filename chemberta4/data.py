@@ -16,7 +16,7 @@ class MoleculeDataset(Dataset):
     """
     Dataset class for MoleculeNet datasets.
 
-    Handles binary, multilabel, multitask classification and regression.
+    Handles single-task, multi-task classification and regression.
     Supports both classification head and LM head prompt formats.
     
     """
@@ -46,7 +46,7 @@ class MoleculeDataset(Dataset):
         prompt : str
             Task-specific prompt text prepended to each molecule.
         task_type : str
-            One of 'binary', 'multilabel', 'multitask', or 'regression'.
+            One of 'single_task', 'multi_task', or 'regression'.
         max_len : int
             Maximum token sequence length for truncation/padding.
         use_lm_head : bool
@@ -64,14 +64,14 @@ class MoleculeDataset(Dataset):
         self.label_std = 1.0
 
         # Process labels based on task type
-        if task_type == "binary":
+        if task_type == "single_task":
             df = df.dropna(subset=task_columns).copy()
             self.labels = torch.tensor(
                 df[task_columns[0]].values.astype(int), dtype=torch.long
             )
             self.label_mask = None
 
-        elif task_type in ("multilabel", "multitask"):
+        elif task_type == "multi_task":
             df = df.copy()
             labels_array = df[task_columns].values.astype(np.float32)
             # Mask for missing labels (NaN values)
@@ -135,7 +135,7 @@ class MoleculeDataset(Dataset):
         -------
         Dict[str, torch.Tensor]
             Dict with 'input_ids', 'attention_mask', 'labels', and
-            optionally 'label_mask' (for multilabel/multitask tasks).
+            optionally 'label_mask' (for multi_task tasks).
         """
         item = {
             "input_ids": self.encodings["input_ids"][idx],

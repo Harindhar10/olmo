@@ -44,28 +44,28 @@ class ClassificationHead(nn.Module):
     """
     Classification head with last-token pooling.
 
-    Supports binary, multilabel, and multitask classification.
-    Uses CrossEntropy for binary, BCEWithLogits for multi-label/task.
+    Supports single-task and multi-task classification.
+    Uses CrossEntropy for single_task, BCEWithLogits for multi_task.
 
     Args:
         backbone: The base model (OLMo with LoRA)
         num_tasks: Number of output classes/tasks
-        task_type: 'binary', 'multilabel', or 'multitask'
+        task_type: 'single_task' or 'multi_task'
     """
 
     def __init__(
         self,
         backbone: nn.Module,
         num_tasks: int = 1,
-        task_type: str = "binary"
+        task_type: str = "single_task"
     ):
         super().__init__()
         self.backbone = backbone
         self.task_type = task_type
         self.num_tasks = num_tasks
 
-        # Output dimension: 2 for binary (class logits), num_tasks for others
-        output_dim = 2 if task_type == "binary" else num_tasks
+        # Output dimension: 2 for single_task (class logits), num_tasks for multi_task
+        output_dim = 2 if task_type == "single_task" else num_tasks
 
         self.classifier = nn.Linear(backbone.config.hidden_size, output_dim)
 
@@ -86,11 +86,11 @@ class ClassificationHead(nn.Module):
         Args:
             input_ids: [batch, seq_len]
             attention_mask: [batch, seq_len]
-            labels: [batch] for binary, [batch, num_tasks] for multi
-            label_mask: [batch, num_tasks] mask for missing labels (multitask)
+            labels: [batch] for single_task, [batch, num_tasks] for multi_task
+            label_mask: [batch, num_tasks] mask for missing labels (multi_task)
 
         Returns:
-            logits: [batch, 2] for binary, [batch, num_tasks] for multi
+            logits: [batch, 2] for single_task, [batch, num_tasks] for multi_task
             loss: scalar loss if labels provided
         """
         out = self.backbone(
@@ -117,10 +117,10 @@ class ClassificationHead(nn.Module):
         label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute task-appropriate loss."""
-        if self.task_type == "binary":
+        if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
-            # multilabel or multitask: use BCE with logits
+            # multi_task: use BCE with logits
             if label_mask is not None:
                 # Masked loss for missing labels
                 loss_fct = nn.BCEWithLogitsLoss(reduction="none")
@@ -139,8 +139,8 @@ class CausalLMClassificationHead(nn.Module):
     Args:
         model: The causal LM model (OLMo with LoRA)
         tokenizer: Tokenizer for encoding Yes/No tokens
-        num_tasks: Number of tasks (for multilabel/multitask)
-        task_type: 'binary', 'multilabel', or 'multitask'
+        num_tasks: Number of tasks (for multi_task)
+        task_type: 'single_task' or 'multi_task'
     """
 
     def __init__(
@@ -148,7 +148,7 @@ class CausalLMClassificationHead(nn.Module):
         model: nn.Module,
         tokenizer,
         num_tasks: int = 1,
-        task_type: str = "binary"
+        task_type: str = "single_task"
     ):
         super().__init__()
         self.model = model
@@ -159,8 +159,8 @@ class CausalLMClassificationHead(nn.Module):
         self.yes_token_id = tokenizer.encode("Yes", add_special_tokens=False)[0]
         self.no_token_id = tokenizer.encode("No", add_special_tokens=False)[0]
 
-        # For multilabel/multitask: project Yes/No diff to multiple outputs
-        if task_type != "binary":
+        # For multi_task: project Yes/No diff to multiple outputs
+        if task_type != "single_task":
             self.task_projector = nn.Linear(1, num_tasks)
             nn.init.normal_(self.task_projector.weight, mean=0.0, std=0.02)
             nn.init.zeros_(self.task_projector.bias)
@@ -178,11 +178,11 @@ class CausalLMClassificationHead(nn.Module):
         Args:
             input_ids: [batch, seq_len]
             attention_mask: [batch, seq_len]
-            labels: [batch] for binary, [batch, num_tasks] for multi
+            labels: [batch] for single_task, [batch, num_tasks] for multi_task
             label_mask: [batch, num_tasks] mask for missing labels
 
         Returns:
-            logits: [batch, 2] for binary, [batch, num_tasks] for multi
+            logits: [batch, 2] for single_task, [batch, num_tasks] for multi_task
             loss: scalar loss if labels provided
         """
         outputs = self.model(
@@ -203,7 +203,7 @@ class CausalLMClassificationHead(nn.Module):
         yes_logits = last_logits[:, self.yes_token_id]
         no_logits = last_logits[:, self.no_token_id]
 
-        if self.task_type == "binary":
+        if self.task_type == "single_task":
             # Stack as [No, Yes] for class indices [0, 1]
             logits = torch.stack([no_logits, yes_logits], dim=-1)
         else:
@@ -224,7 +224,7 @@ class CausalLMClassificationHead(nn.Module):
         label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute task-appropriate loss."""
-        if self.task_type == "binary":
+        if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
             if label_mask is not None:

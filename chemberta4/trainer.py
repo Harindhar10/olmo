@@ -27,7 +27,7 @@ from .utils import get_device_map
 class OLMoClassifier(pl.LightningModule):
     """Lightning module for classification tasks.
 
-    Supports binary, multilabel, and multitask classification.
+    Supports single-task and multi-task classification.
     Can use either a classification head or LM head (Yes/No prediction).
     Supports QLoRA (4-bit), LoRA, and full finetuning.
 
@@ -38,7 +38,7 @@ class OLMoClassifier(pl.LightningModule):
     num_tasks : int
         Number of classification tasks/labels.
     task_type : str
-        One of 'binary', 'multilabel', or 'multitask'.
+        One of 'single_task' or 'multi_task'.
     use_lm_head : bool
         If 'True', use Yes/No LM-head prediction instead of a classification head.
     finetune_strategy : str
@@ -62,7 +62,7 @@ class OLMoClassifier(pl.LightningModule):
         self,
         model_name: str = "allenai/OLMo-7B-hf",
         num_tasks: int = 1,
-        task_type: str = "binary",
+        task_type: str = "single_task",
         use_lm_head: bool = False,
         finetune_strategy: str = "qlora",
         lr: float = 2e-4,
@@ -79,7 +79,7 @@ class OLMoClassifier(pl.LightningModule):
         self.tokenizer = None
 
         # Setup metrics based on task type
-        if task_type == "binary":
+        if task_type == "single_task":
             metric_kwargs = {"task": "binary"}
         else:
             metric_kwargs = {
@@ -233,7 +233,7 @@ class OLMoClassifier(pl.LightningModule):
         auroc_metric = getattr(self, f"{stage}_auroc", None)
 
         # Compute predictions and update metrics
-        if self.hparams.task_type == "binary":
+        if self.hparams.task_type == "single_task":
             probs = torch.softmax(logits, dim=-1)[:, 1]
             preds = logits.argmax(dim=-1)
             acc_metric(preds, batch["labels"])

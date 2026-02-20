@@ -1,11 +1,11 @@
 # ============================================================================
-# Binary Classification Tasks
+# Single-Task Classification Tasks
 # ============================================================================
 
 bbbp:
   task_columns: [p_np]
   prompt: "Does this molecule permeate the blood-brain barrier?"
-  task_type: binary
+  task_type: single_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
@@ -13,7 +13,7 @@ bbbp:
 bace_classification:
   task_columns: [Class]
   prompt: "Is this molecule a BACE-1 inhibitor?"
-  task_type: binary
+  task_type: single_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
@@ -21,7 +21,7 @@ bace_classification:
 hiv:
   task_columns: [HIV_active]
   prompt: "Does this molecule inhibit HIV replication?"
-  task_type: binary
+  task_type: single_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
@@ -29,13 +29,13 @@ hiv:
 clintox:
   task_columns: [CT_TOX]
   prompt: "Is this molecule clinically toxic?"
-  task_type: binary
+  task_type: single_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
 
 # ============================================================================
-# Multilabel Classification Tasks
+# Multi-Task Classification Tasks
 # ============================================================================
 
 sider:
@@ -68,14 +68,10 @@ sider:
     - Nervous system disorders
     - "Injury, poisoning and procedural complications"
   prompt: "What side effects does this drug cause?"
-  task_type: multilabel
+  task_type: multi_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
-
-# ============================================================================
-# Multitask Classification Tasks
-# ============================================================================
 
 tox21:
   task_columns:
@@ -92,7 +88,7 @@ tox21:
     - SR-MMP
     - SR-p53
   prompt: "Predict toxicity across multiple assays for this molecule."
-  task_type: multitask
+  task_type: multi_task
   experiment_type: classification
   monitor_metric: val/roc_auc
   monitor_mode: max
