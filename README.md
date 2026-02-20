@@ -2,18 +2,18 @@
 
 Minimal library for molecular property prediction with [OLMo-7B](https://huggingface.co/allenai/OLMo-7B-hf).
 
-Supports classification (binary, multilabel, multitask), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. New datasets can be added through a task registry in ~5 lines. Experiments are tracked with wandb.
+Supports classification (single_task, multi_task), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. New datasets can be added through a task registry in ~5 lines. Experiments are tracked with wandb.
 
 ## Supported Datasets
 
 | Category | Datasets | Task Type |
 |---|---|---|
-| **Classification** | BBBP, BACE, HIV, ClinTox | Binary |
-| **Classification** | SIDER (27 side-effect labels) | Multilabel |
-| **Classification** | Tox21 (12 toxicity assays) | Multitask |
+| **Classification** | BBBP, BACE, HIV, ClinTox | `single_task` |
+| **Classification** | SIDER (27 side-effect labels) | `multi_task` |
+| **Classification** | Tox21 (12 toxicity assays) | `multi_task` |
 | **Regression** | Delaney (ESOL), FreeSolv, Lipophilicity, Clearance, BACE | Continuous |
 | **Pretraining** | ZINC20, PubChem | Causal LM |
-| **Instruction Tuning** | USPTO (via OpenMol) | Reaction prediction |
+| **Instruction Tuning** | USPTO | Reaction prediction |
 
 ## Requirements
 
@@ -26,8 +26,8 @@ Supports classification (binary, multilabel, multitask), regression, causal LM p
 # Clone the repository
 git clone <repo-url> && cd olmo-1
 
-# Install in editable mode
-pip install -e .
+# Install dependencies
+pip install -r requirements.txt
 
 # (Optional) Install DeepChem for data preparation
 pip install --pre deepchem
@@ -58,13 +58,13 @@ Download MoleculeNet datasets and create scaffold splits:
 
 ```bash
 # Single dataset
-python training/prepare_data.py \
+python prepare_data.py \
     --split_type deepchem \
     --datasets bbbp \
     --data_dir datasets/deepchem_splits
 
 # Multiple datasets at once
-python training/prepare_data.py \
+python prepare_data.py \
     --split_type deepchem \
     --datasets bbbp bace hiv clintox tox21 sider delaney freesolv lipophilicity \
     --data_dir datasets/deepchem_splits
@@ -74,56 +74,55 @@ This creates `train.csv`, `valid.csv`, and `test.csv` under `datasets/deepchem_s
 
 ### 2. Train
 
-**Classification** (binary, multilabel, or multitask):
+All experiments are launched via `run_experiment.py`. Pass `--datasets` followed by one or more dataset names (see `configs/tasks.yaml` for the full list). Defaults for each task type live in `configs/`.
 
 ```bash
-# QLoRA (default) — automatically scales across all available GPUs
-python training/train_classification.py \
-    --task bbbp \
-    --use_qlora \
-    --batch_size 4 \
-    --gradient_accum 24 \
-    --epochs 15
+# Single dataset — QLoRA by default, scales across all available GPUs
+python run_experiment.py --datasets bbbp
+
+# Multiple datasets in sequence (can mix task types)
+python run_experiment.py --datasets bbbp clearance zinc20
+
+# Override defaults
+python run_experiment.py --datasets bbbp --lr 0.001 --epochs 20 --batch_size 8
+```
+
+**Classification** (single_task or multi_task):
+
+```bash
+# QLoRA (default)
+python run_experiment.py --datasets bbbp
 
 # LM-head approach (Yes/No token prediction instead of a linear head)
-python training/train_classification.py \
-    --task bace \
-    --use_lm_head \
-    --use_qlora
+python run_experiment.py --datasets bace_classification --use_lm_head
+
+# LoRA without 4-bit quantization
+python run_experiment.py --datasets bbbp --finetune_strategy lora
 
 # Full fine-tuning (no LoRA)
-python training/train_classification.py \
-    --task clintox \
-    --full_finetune \
-    --lr 1e-5 \
-    --batch_size 2
+python run_experiment.py --datasets clintox --finetune_strategy full_finetune --lr 1e-5
 ```
 
 **Regression**:
 
 ```bash
-python training/train_regression.py --task clearance --use_qlora --epochs 30
-python training/train_regression.py --task esol --use_qlora
+python run_experiment.py --datasets clearance --epochs 30
+python run_experiment.py --datasets delaney
 ```
 
 **Pretraining** (causal LM on SMILES):
 
 ```bash
-python training/pretrain.py \
-    --dataset zinc20 \
-    --num_samples 1000000 \
-    --epochs 1
+python run_experiment.py --datasets zinc20 --num_samples 1000000 --epochs 1
 ```
 
 **Instruction tuning** (reaction prediction):
 
 ```bash
-python training/train_instruction.py \
-    --dataset OpenMol/USPTO_1k_TPL-SFT \
-    --num_samples 10000
+python run_experiment.py --datasets uspto --num_samples 10000
 ```
 
-All training scripts automatically use DDP across every available GPU (`devices=-1, strategy="ddp"` in PyTorch Lightning). No `torchrun` wrapper needed.
+Training automatically uses DDP across every available GPU (`devices=-1, strategy="ddp"` in PyTorch Lightning). No `torchrun` wrapper needed.
 
 ## Training Strategies
 
@@ -139,13 +138,29 @@ All training scripts automatically use DDP across every available GPU (`devices=
 | Learning rate | 2e-4 |
 | Gradient checkpointing | Enabled |
 
+### LoRA
+
+LoRA without quantization — lower memory reduction than QLoRA, but no 4-bit precision loss.
+
+```bash
+python run_experiment.py --datasets bbbp --finetune_strategy lora
+```
+
 ### Full fine-tuning
 
 Disable LoRA and train all parameters. Requires significantly more VRAM.
 
 ```bash
-python training/train_classification.py --task bbbp --full_finetune --lr 1e-5
+python run_experiment.py --datasets bbbp --finetune_strategy full_finetune --lr 1e-5
 ```
+
+### Finetune strategy summary
+
+| Strategy | Flag | Description |
+|---|---|---|
+| QLoRA | `--finetune_strategy qlora` *(default)* | 4-bit NF4 quantization + LoRA |
+| LoRA | `--finetune_strategy lora` | LoRA adapters, no quantization |
+| Full fine-tuning | `--finetune_strategy full_finetune` | All parameters trainable |
 
 ### Classification head options
 
@@ -160,67 +175,68 @@ For best results, chain the stages:
 
 ```bash
 # Stage 1: Pretrain on SMILES
-python training/pretrain.py \
-    --dataset zinc20 \
+python run_experiment.py \
+    --datasets zinc20 \
     --num_samples 10000000 \
     --hub_name youruser/OLMo-7B-ZINC20
 
 # Stage 2: Instruction-tune on reactions
-python training/train_instruction.py \
+python run_experiment.py \
+    --datasets uspto \
     --model_name youruser/OLMo-7B-ZINC20 \
-    --dataset OpenMol/USPTO_1k_TPL-SFT \
     --hub_name youruser/OLMo-7B-ZINC-USPTO
 
 # Stage 3: Fine-tune on downstream task
-python training/train_classification.py \
-    --task bbbp \
+python run_experiment.py \
+    --datasets bbbp \
     --model_name youruser/OLMo-7B-ZINC-USPTO
 ```
 
 ## Adding a New Task
 
-Register a task in the appropriate file under `chemberta4/tasks/`:
+Add an entry to `configs/tasks.yaml`:
 
-```python
-# chemberta4/tasks/classification.py
+```yaml
+# configs/tasks.yaml
 
-register_task(TaskConfig(
-    name="bace_classification",
-    task_columns=["Class"],
-    prompt="Is this molecule a BACE-1 inhibitor?",
-    task_type="binary",
-    monitor_metric="val/roc_auc",
-    monitor_mode="max",
-))
+my_dataset:
+  task_columns: [label]
+  prompt: "Is this molecule active?"
+  task_type: single_task
+  experiment_type: classification
+  monitor_metric: val/roc_auc
+  monitor_mode: max
 ```
 
 Then prepare your data (a CSV with `smiles` and label columns) and train:
 
 ```bash
-python training/train_classification.py --task my_dataset --data_dir path/to/splits
+python run_experiment.py --datasets my_dataset --data_dir path/to/splits
 ```
 
 ## Repository Structure
 
 ```
-chemberta4/
+olmo-1/
 ├── chemberta4/                  # Core library
 │   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead
 │   ├── data.py                # MoleculeDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
 │   ├── callbacks.py           # Wandb logging callback
-│   ├── utils.py               # Rank-aware utilities for DDP
-│   └── tasks/                 # Task registry
-│       ├── base.py            # TaskConfig dataclass & register_task()
-│       ├── classification.py  # BBBP, BACE, HIV, ClinTox, SIDER, Tox21
-│       ├── regression.py      # ESOL, FreeSolv, Lipophilicity, Clearance
-│       └── generation.py      # ZINC20, PubChem, USPTO
-├── training/                   # CLI entry points
-│   ├── prepare_data.py        # Download & scaffold-split datasets
+│   └── utils.py               # Rank-aware utilities for DDP
+├── configs/                    # Default hyperparameters and task registry
+│   ├── tasks.yaml             # All supported datasets and their configs
+│   ├── classification.yaml    # Default classification hyperparameters
+│   ├── regression.yaml        # Default regression hyperparameters
+│   ├── pretrain.yaml          # Default pretraining hyperparameters
+│   └── instruction.yaml       # Default instruction tuning hyperparameters
+├── training/                   # Training functions (called by run_experiment.py)
 │   ├── train_classification.py
 │   ├── train_regression.py
 │   ├── pretrain.py
 │   └── train_instruction.py
+├── run_experiment.py           # Unified entry point for all experiments
+├── prepare_data.py             # Download & scaffold-split datasets
 ├── requirements.txt
 └── README.md
 ```
