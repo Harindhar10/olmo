@@ -18,17 +18,7 @@ class MoleculeDataset(Dataset):
 
     Handles binary, multilabel, multitask classification and regression.
     Supports both classification head and LM head prompt formats.
-
-    Args:
-        df: DataFrame with SMILES and target columns
-        tokenizer: HuggingFace tokenizer
-        task_columns: List of column names containing labels
-        prompt: Task-specific prompt text
-        task_type: 'binary', 'multilabel', 'multitask', or 'regression'
-        max_len: Maximum sequence length for tokenization
-        use_lm_head: If True, format prompts for Yes/No prediction
-        label_stats: Dict with 'mean' and 'std' for regression (use training stats)
-        smiles_column: Name of column containing SMILES strings
+    
     """
 
     def __init__(
@@ -42,7 +32,32 @@ class MoleculeDataset(Dataset):
         use_lm_head: bool = False,
         label_stats: Optional[Dict[str, float]] = None,
         smiles_column: str = "smiles",
-    ):
+    ) -> None:
+        """Initialise MoleculeDataset.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame with SMILES and target columns.
+        tokenizer : PreTrainedTokenizerBase
+            HuggingFace tokenizer.
+        task_columns : List[str]
+            Column names containing the target labels.
+        prompt : str
+            Task-specific prompt text prepended to each molecule.
+        task_type : str
+            One of 'binary', 'multilabel', 'multitask', or 'regression'.
+        max_len : int
+            Maximum token sequence length for truncation/padding.
+        use_lm_head : bool
+            If 'True', format prompts for Yes/No LM-head prediction.
+        label_stats : Dict[str, float], optional
+            Dict with 'mean' and 'std' keys for regression normalization.
+            Pass training-set stats when creating val/test datasets.
+        smiles_column : str
+            Name of the column containing SMILES strings.
+        """
+        
         self.task_type = task_type
         self.num_tasks = len(task_columns)
         self.label_mean = 0.0
@@ -105,9 +120,23 @@ class MoleculeDataset(Dataset):
         self.num_samples = len(df)
 
     def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Return a single tokenized sample.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', 'labels', and
+            optionally 'label_mask' (for multilabel/multitask tasks).
+        """
         item = {
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
@@ -118,7 +147,14 @@ class MoleculeDataset(Dataset):
         return item
 
     def get_label_stats(self) -> Optional[Dict[str, float]]:
-        """Return label normalization stats for regression tasks."""
+        """Return label normalization statistics for regression tasks.
+
+        Returns
+        -------
+        Dict[str, float] or None
+            Dict with 'mean' and 'std' if task is regression,
+            otherwise None.
+        """
         if self.task_type == "regression":
             return {"mean": self.label_mean, "std": self.label_std}
         return None
@@ -130,11 +166,6 @@ class PretrainingDataset(Dataset):
 
     Simply formats SMILES strings for next-token prediction.
 
-    Args:
-        smiles_list: List of SMILES strings
-        tokenizer: HuggingFace tokenizer
-        max_len: Maximum sequence length
-        prefix: Prefix before each SMILES (default: "SMILES: ")
     """
 
     def __init__(
@@ -143,7 +174,21 @@ class PretrainingDataset(Dataset):
         tokenizer,
         max_len: int = 256,
         prefix: str = "SMILES: ",
-    ):
+    ) -> None:
+        """Initialise PretrainingDataset.
+
+        Parameters
+        ----------
+        smiles_list : List[str]
+            List of SMILES strings.
+        tokenizer : PreTrainedTokenizerBase
+            HuggingFace tokenizer.
+        max_len : int
+            Maximum token sequence length for truncation/padding.
+        prefix : str
+            String prepended to each SMILES (default: 'SMILES: ').
+        """
+
         texts = [f"{prefix}{s}" for s in smiles_list]
 
         self.encodings = tokenizer(
@@ -166,9 +211,23 @@ class PretrainingDataset(Dataset):
         self.num_samples = len(smiles_list)
 
     def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Return a single tokenized sample.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', 'labels', and
+            'num_bytes' (byte count used for BPB calculation).
+        """
         return {
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
@@ -182,19 +241,25 @@ class InstructionDataset(Dataset):
     Dataset for instruction tuning (USPTO-style).
 
     Formats instruction/input/output tuples for causal LM training.
-
-    Args:
-        data: Iterable of dicts with 'instruction', 'input', 'output' keys
-        tokenizer: HuggingFace tokenizer
-        max_len: Maximum sequence length
     """
 
     def __init__(
         self,
-        data,
+        data: List[Dict],
         tokenizer,
         max_len: int = 512,
-    ):
+    ) -> None:
+        """Initialise InstructionDataset.
+
+        Parameters
+        ----------
+        data : List[Dict]
+            List of dicts with 'instruction', 'input', and 'output' keys.
+        tokenizer : PreTrainedTokenizerBase
+            HuggingFace tokenizer.
+        max_len : int
+            Maximum token sequence length for truncation/padding.
+        """
         self.tokenizer = tokenizer
         self.max_len = max_len
 
@@ -212,9 +277,23 @@ class InstructionDataset(Dataset):
         ]
 
     def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
         return len(self.data)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Return a single tokenized instruction sample.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', 'labels', and
+            'num_bytes' (byte count used for BPB calculation).
+        """
         item = self.data[idx]
 
         # Build instruction format
@@ -251,18 +330,25 @@ def create_dataloaders(
     batch_size: int = 8,
     num_workers: int = 4,
 ) -> Dict[str, Any]:
-    """
-    Create dataloaders with standard settings.
+    """Create DataLoaders with standard settings.
 
-    Args:
-        train_ds: Training dataset
-        val_ds: Validation dataset
-        test_ds: Optional test dataset
-        batch_size: Batch size for all loaders
-        num_workers: Number of data loader workers
+    Parameters
+    ----------
+    train_ds : Dataset
+        Training dataset.
+    val_ds : Dataset
+        Validation dataset.
+    test_ds : Dataset, optional
+        Test dataset. When provided, a 'test' loader is included in the output.
+    batch_size : int
+        Batch size for all loaders.
+    num_workers : int
+        Number of worker processes for data loading.
 
-    Returns:
-        Dict with 'train', 'val', and optionally 'test' dataloaders
+    Returns
+    -------
+    Dict[str, Any]
+        Dict with 'train', 'val', and optionally 'test' DataLoaders.
     """
     from torch.utils.data import DataLoader
 

@@ -2,6 +2,7 @@ import gc
 import os
 import sys
 from datetime import datetime
+from types import SimpleNamespace
 from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,18 +23,19 @@ from chemberta4.utils import is_main_process, print0
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def load_smiles_data(args) -> List:
-    """Load SMILES dataset from huggingface based on args.
-    
+def load_smiles_data(args: SimpleNamespace) -> List[str]:
+    """Load SMILES dataset from HuggingFace based on args.
+
     Parameters
     ----------
-    args:
-        data loading arguments
-    
+    args : SimpleNamespace
+        Data loading arguments. Must have 'dataset' (str) and optionally
+        'num_samples' (int), 'dataset_path' (str), 'smiles_column' (str).
+
     Returns
     -------
-    List 
-        A list of smiles strings
+    List[str]
+        A list of SMILES strings.
     """
     if args.dataset == "zinc20":
         # ZINC20 dataset from HuggingFace
@@ -60,25 +62,15 @@ def load_smiles_data(args) -> List:
     return smiles_list
 
 
-def run_pretraining_experiment(args, task_name: str) -> None:
-    """
-    Run pretraining on a smiles dataset.
-
-    TODO: add type annotation for args
-    What it does:
-        - Creates data loaders by downloading data from huggingface
-        - Instantiates model class (OLMoPretrainer)
-        - Instantiates callbacks for learning rate warmup and logging
-        - Optional wandb logging and saving
-        - Model training and saving to huggingface
-        - Model cleanup
+def run_pretraining_experiment(args: SimpleNamespace, task_name: str) -> None:
+    """Run causal LM pretraining on a SMILES dataset.
 
     Parameters
     ----------
-    args: 
-        training arguments
-    task: str
-        name of the dataset to run experiment on
+    args : SimpleNamespace
+        Training arguments (model, data, optimizer, and logging settings).
+    task_name : str
+        Name of the pretraining dataset (e.g. 'zinc20', 'pubchem').
     """
     # Set dataset in args for load_smiles_data compatibility
     args.dataset = task_name

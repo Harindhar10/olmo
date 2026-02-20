@@ -36,7 +36,15 @@ import pytorch_lightning as pl
 from chemberta4.utils import get_task, prepare_config, print0, set_seed
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the experiment runner.
+
+    Returns
+    -------
+    argparse.Namespace
+        Parsed arguments with 'None' defaults for all optional fields
+        (overrides are merged with task-specific config in 'prepare_config').
+    """
     parser = argparse.ArgumentParser(description="Run experiments on molecular datasets")
 
     # Required
@@ -89,7 +97,8 @@ def parse_args():
     return args
 
 
-def main():
+def main() -> None:
+    """Entry point: iterate over requested datasets and dispatch to the appropriate trainer."""
     args = parse_args()
 
     for dataset_name in args.datasets:

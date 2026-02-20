@@ -6,6 +6,7 @@ with support for QLoRA and full finetuning.
 """
 
 import math
+from typing import Any, Dict, Optional
 
 import torch
 import pytorch_lightning as pl
@@ -24,25 +25,37 @@ from .utils import get_device_map
 
 
 class OLMoClassifier(pl.LightningModule):
-    """
-    Lightning module for classification tasks.
+    """Lightning module for classification tasks.
 
     Supports binary, multilabel, and multitask classification.
     Can use either a classification head or LM head (Yes/No prediction).
     Supports QLoRA (4-bit), LoRA, and full finetuning.
 
-    Args:
-        model_name: HuggingFace model identifier
-        num_tasks: Number of classification tasks/labels
-        task_type: 'binary', 'multilabel', or 'multitask'
-        use_lm_head: Use Yes/No prediction instead of classification head
-        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
-        lr: Learning rate
-        weight_decay: Weight decay for AdamW
-        warmup_ratio: Fraction of steps for warmup
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha (typically 2x rank)
-        lora_dropout: LoRA dropout rate
+    Parameters
+    ----------
+    model_name : str
+        HuggingFace model identifier.
+    num_tasks : int
+        Number of classification tasks/labels.
+    task_type : str
+        One of 'binary', 'multilabel', or 'multitask'.
+    use_lm_head : bool
+        If 'True', use Yes/No LM-head prediction instead of a classification head.
+    finetune_strategy : str
+        One of 'qlora' (4-bit + LoRA), 'lora' (LoRA only), or
+        'full_finetune' (all parameters trainable).
+    lr : float
+        Learning rate.
+    weight_decay : float
+        Weight decay for AdamW.
+    warmup_ratio : float
+        Fraction of total steps used for linear warmup.
+    lora_r : int
+        LoRA rank.
+    lora_alpha : int
+        LoRA alpha (typically 2× rank).
+    lora_dropout : float
+        LoRA dropout rate.
     """
 
     def __init__(
@@ -81,8 +94,13 @@ class OLMoClassifier(pl.LightningModule):
         self.test_acc = Accuracy(**metric_kwargs)
         self.test_auroc = AUROC(**metric_kwargs)
 
-    def configure_model(self):
-        """Initialize model (called before training starts)."""
+    def configure_model(self) -> None:
+        """Initialise the backbone model and optional LoRA adapters.
+
+        Called by the trainer before training starts. Loads the base model,
+        applies quantization (QLoRA) and LoRA adapters based on
+        'finetune_strategy', then wraps with the appropriate head.
+        """
         if self.model is not None:
             return
 
@@ -159,11 +177,49 @@ class OLMoClassifier(pl.LightningModule):
 
             self.model = ClassificationHead(base, hp.num_tasks, hp.task_type)
 
-    def forward(self, input_ids, attention_mask, labels=None, label_mask=None):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+        label_mask: Optional[torch.Tensor] = None,
+    ) -> Any:
+        """Run the forward pass through the classification model.
+
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '(batch, seq_len)'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '(batch, seq_len)'.
+        labels : torch.Tensor, optional
+            Ground-truth labels for loss computation.
+        label_mask : torch.Tensor, optional
+            Boolean mask for valid labels (multilabel/multitask tasks).
+
+        Returns
+        -------
+        tuple
+            '(logits, loss)' returned by the classification head.
+        """
         return self.model(input_ids, attention_mask, labels, label_mask)
 
-    def _shared_step(self, batch, stage: str):
-        """Shared logic for train/val/test steps."""
+    def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+        """Compute loss and update metrics for a single batch.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', 'labels', and
+            optionally 'label_mask'.
+        stage : str
+            One of 'train', 'val', or 'test'.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar loss tensor.
+        """
         label_mask = batch.get("label_mask", None)
         logits, loss = self(
             batch["input_ids"],
@@ -207,16 +263,66 @@ class OLMoClassifier(pl.LightningModule):
 
         return loss
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single training step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar training loss.
+        """
         return self._shared_step(batch, "train")
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single validation step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar validation loss.
+        """
         return self._shared_step(batch, "val")
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single test step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar test loss.
+        """
         return self._shared_step(batch, "test")
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Dict:
+        """Set up AdamW optimizer with warmup + cosine annealing scheduler.
+
+        Returns
+        -------
+        Dict
+            Dict with 'optimizer' and 'lr_scheduler' keys, as expected
+            by PyTorch Lightning.
+        """
         hp = self.hparams
 
         # Separate params for weight decay
@@ -261,23 +367,33 @@ class OLMoClassifier(pl.LightningModule):
 
 
 class OLMoRegressor(pl.LightningModule):
-    """
-    Lightning module for regression tasks.
+    """Lightning module for regression tasks.
 
     Uses RMSE loss and supports label normalization.
     Reports denormalized metrics for interpretability.
 
-    Args:
-        model_name: HuggingFace model identifier
-        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
-        lr: Learning rate
-        weight_decay: Weight decay for AdamW
-        warmup_ratio: Fraction of steps for warmup
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha
-        lora_dropout: LoRA dropout rate
-        label_mean: Mean for label denormalization
-        label_std: Std for label denormalization
+    Parameters
+    ----------
+    model_name : str
+        HuggingFace model identifier.
+    finetune_strategy : str
+        One of 'qlora', 'lora', or 'full_finetune'.
+    lr : float
+        Learning rate.
+    weight_decay : float
+        Weight decay for AdamW.
+    warmup_ratio : float
+        Fraction of total steps used for linear warmup.
+    lora_r : int
+        LoRA rank.
+    lora_alpha : int
+        LoRA alpha.
+    lora_dropout : float
+        LoRA dropout rate.
+    label_mean : float
+        Training-set label mean used for denormalization.
+    label_std : float
+        Training-set label std used for denormalization.
     """
 
     def __init__(
@@ -299,8 +415,12 @@ class OLMoRegressor(pl.LightningModule):
         self.model = None
         self.tokenizer = None
 
-    def configure_model(self):
-        """Initialize model (called before training starts)."""
+    def configure_model(self) -> None:
+        """Initialise the backbone model and optional LoRA adapters.
+
+        Called by the trainer before training starts. Applies quantization
+        and LoRA based on 'finetune_strategy', then wraps with a regression head.
+        """
         if self.model is not None:
             return
 
@@ -344,15 +464,60 @@ class OLMoRegressor(pl.LightningModule):
 
         self.model = RegressionHead(base)
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Any:
+        """Run the forward pass through the regression model.
+
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '(batch, seq_len)'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '(batch, seq_len)'.
+        labels : torch.Tensor, optional
+            Ground-truth labels for loss computation.
+
+        Returns
+        -------
+        tuple
+            '(predictions, loss)' returned by the regression head.
+        """
         return self.model(input_ids, attention_mask, labels)
 
-    def _denormalize(self, values):
-        """Convert normalized values back to original scale."""
+    def _denormalize(self, values: torch.Tensor) -> torch.Tensor:
+        """Convert normalized predictions back to the original label scale.
+
+        Parameters
+        ----------
+        values : torch.Tensor
+            Normalized values to denormalize.
+
+        Returns
+        -------
+        torch.Tensor
+            Denormalized values in the original label space.
+        """
         return values * self.hparams.label_std + self.hparams.label_mean
 
-    def _shared_step(self, batch, stage: str):
-        """Shared logic for train/val/test steps."""
+    def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+        """Compute loss and log RMSE/MAE for a single batch.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', and 'labels'.
+        stage : str
+            One of 'train', 'val', or 'test'.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar loss tensor.
+        """
         preds, loss = self(
             batch["input_ids"],
             batch["attention_mask"],
@@ -375,16 +540,66 @@ class OLMoRegressor(pl.LightningModule):
 
         return loss
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single training step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar training loss.
+        """
         return self._shared_step(batch, "train")
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single validation step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar validation loss.
+        """
         return self._shared_step(batch, "val")
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Execute a single test step.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch of tokenized samples from the DataLoader.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar test loss.
+        """
         return self._shared_step(batch, "test")
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Dict:
+        """Set up AdamW optimizer with warmup + cosine annealing scheduler.
+
+        Returns
+        -------
+        Dict
+            Dict with 'optimizer' and 'lr_scheduler' keys, as expected
+            by PyTorch Lightning.
+        """
         hp = self.hparams
 
         decay_params = []
@@ -427,22 +642,31 @@ class OLMoRegressor(pl.LightningModule):
 
 
 class OLMoPretrainer(pl.LightningModule):
-    """
-    Lightning module for causal LM pretraining.
+    """Lightning module for causal LM pretraining.
 
     Used for pretraining on SMILES (ZINC20, PubChem) or
     instruction tuning (USPTO).
 
-    Args:
-        model_name: HuggingFace model identifier or path to pretrained model
-        finetune_strategy: 'qlora' (4-bit + LoRA), 'lora' (LoRA), or 'full_finetune' (all params)
-        lr: Learning rate
-        weight_decay: Weight decay
-        warmup_ratio: Fraction of steps for warmup
-        lora_r: LoRA rank
-        lora_alpha: LoRA alpha
-        lora_dropout: LoRA dropout
-        gradient_checkpointing: Enable gradient checkpointing
+    Parameters
+    ----------
+    model_name : str
+        HuggingFace model identifier or path to a pretrained model.
+    finetune_strategy : str
+        One of 'qlora', 'lora', or 'full_finetune'.
+    lr : float
+        Learning rate.
+    weight_decay : float
+        Weight decay.
+    warmup_ratio : float
+        Fraction of total steps used for linear warmup.
+    lora_r : int
+        LoRA rank.
+    lora_alpha : int
+        LoRA alpha.
+    lora_dropout : float
+        LoRA dropout rate.
+    gradient_checkpointing : bool
+        Whether to enable gradient checkpointing to reduce VRAM usage.
     """
 
     def __init__(
@@ -463,8 +687,8 @@ class OLMoPretrainer(pl.LightningModule):
         self.model = None
         self.tokenizer = None
 
-    def configure_model(self):
-        """Initialize model."""
+    def configure_model(self) -> None:
+        """Initialize the causal LM model with the configured fine-tuning strategy."""
         if self.model is not None:
             return
 
@@ -512,14 +736,49 @@ class OLMoPretrainer(pl.LightningModule):
         if self.trainer.is_global_zero:
             self.model.print_trainable_parameters()
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Any:
+        """Run a forward pass through the causal LM.
+
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '(batch, seq_len)'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '(batch, seq_len)'.
+        labels : torch.Tensor, optional
+            Target token IDs for language modelling loss.
+
+        Returns
+        -------
+        Any
+            Model output with 'loss' and 'logits' attributes.
+        """
         return self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
         )
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Compute causal LM loss for a training batch.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch with 'input_ids', 'attention_mask', and 'labels'.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar training loss.
+        """
         outputs = self(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -529,7 +788,21 @@ class OLMoPretrainer(pl.LightningModule):
         self.log("train/loss", loss, prog_bar=True, on_step=True, sync_dist=True)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        """Compute loss, perplexity, and BPB for a validation batch.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Batch with 'input_ids', 'attention_mask', 'labels', and 'num_bytes'.
+        batch_idx : int
+            Index of the current batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar validation loss.
+        """
         outputs = self(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -550,7 +823,14 @@ class OLMoPretrainer(pl.LightningModule):
         self.log("val/bpb", bpb, on_epoch=True, sync_dist=True)
         return loss
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Dict:
+        """Build AdamW optimizer with linear warmup and cosine annealing schedule.
+
+        Returns
+        -------
+        Dict
+            Dict with 'optimizer' and 'lr_scheduler' keys.
+        """
         hp = self.hparams
 
         optimizer = torch.optim.AdamW(

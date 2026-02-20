@@ -2,6 +2,7 @@ import gc
 import os
 import sys
 from datetime import datetime
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,24 +22,15 @@ from chemberta4.utils import is_main_process, print0
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-def run_instruction_experiment(args, task_name: str) -> None:
+def run_instruction_experiment(args: SimpleNamespace, task_name: str) -> None:
     """Run instruction tuning on an instruction dataset.
-
-    TODO: add type annotation for args
-    What it does:
-        - Creates data loaders by downloading data from huggingface
-        - Instantiates model class (OLMoPretrainer)
-        - Instantiates callbacks for learning rate warmup and logging
-        - Optional wandb logging and saving
-        - Model training and saving to huggingface
-        - Model cleanup
 
     Parameters
     ----------
-    args: 
-        training arguments
-    task: str
-        name of the dataset to run experiment on
+    args : SimpleNamespace
+        Training arguments (model, data, optimizer, and logging settings).
+    task_name : str
+        Name of the instruction-tuning dataset (e.g. 'uspto').
     """
     print0(f"Loading dataset: {args.dataset}")
 

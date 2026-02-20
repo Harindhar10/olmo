@@ -4,6 +4,7 @@ Custom PyTorch Lightning callbacks.
 Provides WandbCallback for experiment tracking.
 """
 
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
 
 
@@ -14,8 +15,16 @@ class WandbCallback(Callback):
     Only logs on rank 0 (global zero) to avoid duplicate entries in DDP.
     """
 
-    def on_train_epoch_end(self, trainer, pl_module):
-        """Log training metrics at end of epoch."""
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Log training metrics at the end of each epoch.
+
+        Parameters
+        ----------
+        trainer : pl.Trainer
+            The PyTorch Lightning trainer instance.
+        pl_module : pl.LightningModule
+            The Lightning module being trained.
+        """
         if not trainer.is_global_zero:
             return
 
@@ -26,8 +35,16 @@ class WandbCallback(Callback):
                 metric_name = key.replace("/", "_")
                 wandb.log({metric_name: float(value)}, step=trainer.current_epoch)
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        """Log validation metrics at end of epoch."""
+    def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Log validation metrics and learning rate at the end of each epoch.
+
+        Parameters
+        ----------
+        trainer : pl.Trainer
+            The PyTorch Lightning trainer instance.
+        pl_module : pl.LightningModule
+            The Lightning module being trained.
+        """
         if not trainer.is_global_zero:
             return
 
@@ -46,8 +63,16 @@ class WandbCallback(Callback):
             except Exception:
                 pass
 
-    def on_test_epoch_end(self, trainer, pl_module):
-        """Log test metrics at end of testing."""
+    def on_test_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        """Log test metrics at the end of testing.
+
+        Parameters
+        ----------
+        trainer : pl.Trainer
+            The PyTorch Lightning trainer instance.
+        pl_module : pl.LightningModule
+            The Lightning module being evaluated.
+        """
         if not trainer.is_global_zero:
             return
 
