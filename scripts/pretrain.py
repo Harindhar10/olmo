@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Causal LM pretraining on SMILES datasets (ZINC20, PubChem).
-
-Examples:
-    # Pretrain on ZINC20
-    torchrun --nproc_per_node=4 scripts/pretrain.py configs/pretrain.yaml
-
-    # Custom config
-    python scripts/pretrain.py my_config.yaml
-"""
-
 import gc
 import os
 import sys

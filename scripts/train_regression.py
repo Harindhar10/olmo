@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Regression finetuning on MoleculeNet datasets.
-
-Examples:
-    # Single/Multi GPU with QLoRA
-    python scripts/train_regression.py configs/regression.yaml
-
-    # Custom config
-    python scripts/train_regression.py my_config.yaml
-"""
-
 import gc
 import os
 import sys

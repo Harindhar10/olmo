@@ -19,7 +19,6 @@ numpy>=1.24.0
 torchmetrics>=1.0.0
 
 # Experiment tracking
-mlflow>=2.8.0
 wandb>=0.25.0
 
 # Optional: for data preparation

@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Instruction tuning on USPTO dataset.
-
-Examples:
-    # Basic instruction tuning
-    torchrun --nproc_per_node=4 scripts/train_instruction.py configs/instruction.yaml
-
-    # Custom config
-    python scripts/train_instruction.py my_config.yaml
-"""
-
 import gc
 import os
 import sys

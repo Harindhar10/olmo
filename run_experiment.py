@@ -2,6 +2,15 @@
 """
 Unified experiment runner for all task types.
 
+Users are expected to run this file to start training experiments. Supported datasets
+and their configs are defined in chemberta4/configs/tasks.yaml. 
+To run this file, --datasets is the only required argument. The other arguments have defualts 
+stored in chemberta4/configs. Each type of task (classification/regression/pretrain/instruction)
+has its configs defined in chemberta4/configs and loaded based on the dataset_name.
+
+If the default arguments need to be overridden, it can be done 
+by passing needed arguments while running this file.
+
 Examples:
     # Single classification task
     python run_experiment.py bbbp

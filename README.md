@@ -2,7 +2,7 @@
 
 Minimal library for molecular property prediction with [OLMo-7B](https://huggingface.co/allenai/OLMo-7B-hf).
 
-Supports classification (binary, multilabel, multitask), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. New datasets can be added through a task registry in ~5 lines. Experiments are tracked with MLflow.
+Supports classification (binary, multilabel, multitask), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. New datasets can be added through a task registry in ~5 lines. Experiments are tracked with wandb.
 
 ## Supported Datasets
 
@@ -47,7 +47,6 @@ pip install --pre deepchem
 | `pandas >= 1.5` | Data manipulation |
 | `numpy >= 1.24` | Numerical utilities |
 | `torchmetrics >= 1.0` | Metric computation |
-| `mlflow >= 2.8` | Experiment tracking |
 
 </details>
 
@@ -209,7 +208,7 @@ chemberta4/
 │   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead
 │   ├── data.py                # MoleculeDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
-│   ├── callbacks.py           # MLflow logging callback
+│   ├── callbacks.py           # Wandb logging callback
 │   ├── utils.py               # Rank-aware utilities for DDP
 │   └── tasks/                 # Task registry
 │       ├── base.py            # TaskConfig dataclass & register_task()
@@ -228,7 +227,7 @@ chemberta4/
 
 ## Metrics & Experiment Tracking
 
-Training metrics are logged automatically via MLflow:
+Training metrics are logged via wandb:
 
 | Task Type | Metrics |
 |---|---|
