@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from chemberta4.callbacks import WandbCallback
-from chemberta4.data import MoleculeDataset
+from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoRegressor
 from chemberta4.utils import get_task, is_main_process, print0
 
@@ -46,7 +46,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
     # Create training dataset (computes normalization stats)
-    train_ds = MoleculeDataset(
+    train_ds = MoleculeNetDataset(
         train_df,
         tokenizer,
         task_config.task_columns,
@@ -60,7 +60,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     print0(f"Label normalization - Mean: {label_stats['mean']:.4f}, Std: {label_stats['std']:.4f}")
 
     # Create val/test datasets with training stats
-    val_ds = MoleculeDataset(
+    val_ds = MoleculeNetDataset(
         val_df,
         tokenizer,
         task_config.task_columns,
@@ -69,7 +69,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         args.max_len,
         label_stats=label_stats,
     )
-    test_ds = MoleculeDataset(
+    test_ds = MoleculeNetDataset(
         test_df,
         tokenizer,
         task_config.task_columns,

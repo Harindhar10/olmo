@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from typing import Optional, Dict, List, Any
 
 
-class MoleculeDataset(Dataset):
+class MoleculeNetDataset(Dataset):
     """
     Dataset class for MoleculeNet datasets.
 
@@ -33,7 +33,7 @@ class MoleculeDataset(Dataset):
         label_stats: Optional[Dict[str, float]] = None,
         smiles_column: str = "smiles",
     ) -> None:
-        """Initialise MoleculeDataset.
+        """Initialise MoleculeNetDataset.
 
         Parameters
         ----------

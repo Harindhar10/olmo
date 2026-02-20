@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from chemberta4.callbacks import WandbCallback
-from chemberta4.data import MoleculeDataset
+from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoClassifier
 from chemberta4.utils import get_task, is_main_process, print0
 
@@ -44,7 +44,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
     # Create datasets
-    train_ds = MoleculeDataset(
+    train_ds = MoleculeNetDataset(
         train_df,
         tokenizer,
         task_config.task_columns,
@@ -53,7 +53,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         args.max_len,
         args.use_lm_head,
     )
-    val_ds = MoleculeDataset(
+    val_ds = MoleculeNetDataset(
         val_df,
         tokenizer,
         task_config.task_columns,
@@ -62,7 +62,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         args.max_len,
         args.use_lm_head,
     )
-    test_ds = MoleculeDataset(
+    test_ds = MoleculeNetDataset(
         test_df,
         tokenizer,
         task_config.task_columns,

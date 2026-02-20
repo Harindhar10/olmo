@@ -224,7 +224,7 @@ python run_experiment.py --datasets my_dataset --data_dir path/to/splits
 olmo-1/
 ├── chemberta4/                  # Core library
 │   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead
-│   ├── data.py                # MoleculeDataset, PretrainingDataset, InstructionDataset
+│   ├── data.py                # MoleculeNetDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
 │   ├── callbacks.py           # Wandb logging callback
 │   └── utils.py               # Rank-aware utilities for DDP
