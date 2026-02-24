@@ -20,8 +20,8 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
-from .model import ClassificationHead, CausalLMClassificationHead, RegressionHead
-from .utils import get_device_map
+from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead
+from chemberta4.utils import get_device_map
 
 
 class OLMoClassifier(pl.LightningModule):
