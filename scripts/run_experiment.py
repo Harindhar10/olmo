@@ -13,23 +13,20 @@ by passing needed arguments while running this file.
 
 Examples:
     # Single classification task
-    python run_experiment.py bbbp
+    python scripts/run_experiment.py --datasets bbbp
 
     # Multiple datasets (can mix types)
-    python run_experiment.py bbbp clearance zinc20
+    python scripts/run_experiment.py --datasets bbbp clearance zinc20
 
     # Override defaults
-    python run_experiment.py bbbp --lr 0.001 --epochs 20 --batch_size 8
+    python scripts/run_experiment.py --datasets bbbp --lr 0.001 --epochs 20 --batch_size 8
 
     # Pretraining with custom settings
-    python run_experiment.py zinc20 --num_samples 50000 --hub_name my-org/my-model
+    python scripts/run_experiment.py --datasets zinc20 --num_samples 50000 --hub_name my-org/my-model
 """
 
 import argparse
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -117,19 +114,19 @@ def main() -> None:
         log0("=" * 60)
 
         if task.experiment_type == "classification":
-            from training.train_classification import run_classification_experiment
+            from chemberta4.training.train_classification import run_classification_experiment
             run_classification_experiment(config, dataset_name)
 
         elif task.experiment_type == "regression":
-            from training.train_regression import run_regression_experiment
+            from chemberta4.training.train_regression import run_regression_experiment
             run_regression_experiment(config, dataset_name)
 
         elif task.experiment_type == "pretraining":
-            from training.pretrain import run_pretraining_experiment
+            from chemberta4.training.pretrain import run_pretraining_experiment
             run_pretraining_experiment(config, dataset_name)
 
         elif task.experiment_type == "instruction":
-            from training.train_instruction import run_instruction_experiment
+            from chemberta4.training.train_instruction import run_instruction_experiment
             run_instruction_experiment(config, dataset_name)
 
         else:
