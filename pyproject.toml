@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "chemberta4"
+version = "0.1.0"
+description = "Molecular property prediction with OLMo"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0.0",
+    "pytorch-lightning>=2.0.0",
+    "transformers>=4.35.0",
+    "peft>=0.6.0",
+    "bitsandbytes>=0.41.0",
+    "pyyaml>=6.0",
+    "datasets==3.6.0",
+    "pandas>=1.5.0",
+    "numpy>=1.24.0",
+    "torchmetrics>=1.0.0",
+    "wandb>=0.25.0",
+]
+
+[project.optional-dependencies]
+data = ["deepchem>=2.7.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chemberta4*"]
