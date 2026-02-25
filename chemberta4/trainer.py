@@ -25,11 +25,11 @@ from chemberta4.utils import get_device_map
 
 
 class OLMoClassifier(pl.LightningModule):
-    """Lightning module for classification tasks.
+    """This class implements a PyTorch Lightning module for molecular classification tasks.
 
-    Supports single-task and multi-task classification.
-    Can use either a classification head or LM head (Yes/No prediction).
-    Supports QLoRA (4-bit), LoRA, and full finetuning.
+    It supports single-task and multi-task classification.
+    It can use either a classification head or an LM head for Yes/No token prediction.
+    It supports QLoRA (4-bit quantization), LoRA, and full finetuning strategies.
 
     Orchestrates the full classification training loop on top of OLMo (or any
     decoder-only model). Model loading and LoRA/QLoRA setup are deferred to
@@ -410,10 +410,10 @@ class OLMoClassifier(pl.LightningModule):
 
 
 class OLMoRegressor(pl.LightningModule):
-    """Lightning module for regression tasks.
+    """This class implements a PyTorch Lightning module for molecular regression tasks.
 
-    Uses RMSE loss and supports label normalization.
-    Reports denormalized metrics for interpretability.
+    It uses RMSE loss and supports z-score label normalization.
+    It reports denormalized metrics for interpretability.
 
     Orchestrates the regression training loop with z-score label normalisation.
     Labels stored in the dataset are already normalised; 'label_mean' and
@@ -710,12 +710,12 @@ class OLMoRegressor(pl.LightningModule):
 
 
 class OLMoPretrainer(pl.LightningModule):
-    """Lightning module for causal LM pretraining.
+    """This class implements a PyTorch Lightning module for causal language model pretraining.
 
-    Used for pretraining on SMILES (ZINC20, PubChem) or
-    instruction tuning (USPTO).
+    It handles pretraining on SMILES corpora (ZINC20, PubChem) and instruction tuning on
+    reaction datasets (USPTO).
 
-    Handles causal LM training for both SMILES pretraining (ZINC20, PubChem)
+    The module handles causal LM training for both SMILES pretraining (ZINC20, PubChem)
     and instruction tuning (USPTO). The same module is reused for both tasks
     because both reduce to next-token prediction with cross-entropy loss. The
     validation step additionally computes perplexity and bits-per-byte (BPB),

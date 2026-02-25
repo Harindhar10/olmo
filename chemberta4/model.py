@@ -15,7 +15,7 @@ def last_token_pool(
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor
 ) -> torch.Tensor:
-    """Extract the last non-padding token representation.
+    """This function extracts the last non-padding token representation.
 
     For decoder-only models like OLMo, we use the last token's representation
     for classification/regression tasks. Decoder-only transformers process
@@ -67,10 +67,10 @@ def last_token_pool(
 
 
 class ClassificationHead(nn.Module):
-    """Classification head with last-token pooling.
+    """This class implements a classification head with last-token pooling for binary and multi-label prediction.
 
-    Supports single-task and multi-task classification.
-    Uses CrossEntropy for single_task, BCEWithLogits for multi_task.
+    It supports both single-task and multi-task classification.
+    It uses CrossEntropyLoss for single_task and BCEWithLogitsLoss for multi_task.
 
     Takes a backbone 'nn.Module' (typically OLMo with LoRA adapters) and adds
     a single linear layer on top of the last-token hidden state. For
@@ -233,9 +233,9 @@ class ClassificationHead(nn.Module):
 
 
 class CausalLMClassificationHead(nn.Module):
-    """Use the LM head to predict Yes/No tokens for classification.
+    """This class uses the LM head to predict Yes/No tokens for classification.
 
-    Instead of a separate classification head, this approach leverages
+    Instead of a separate classification head, this class leverages
     the pretrained LM head to predict 'Yes' or 'No' tokens.
 
     Instead of a linear classifier, this head re-uses the model's existing
@@ -423,9 +423,9 @@ class CausalLMClassificationHead(nn.Module):
 
 
 class RegressionHead(nn.Module):
-    """Regression head with last-token pooling.
+    """This class implements a regression head with last-token pooling for scalar molecular property prediction.
 
-    Uses RMSE loss by default.
+    It uses RMSE loss by default.
 
     Takes a backbone 'nn.Module' and appends a single linear unit that maps
     the last-token hidden state to a scalar. Loss is the square-root of MSE

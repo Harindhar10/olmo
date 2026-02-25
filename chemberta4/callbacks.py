@@ -10,9 +10,9 @@ from pytorch_lightning.callbacks import Callback
 
 class WandbCallback(Callback):
     """
-    Log training and validation metrics to Weights & Biases.
+    This class logs training and validation metrics to Weights & Biases.
 
-    Only logs on rank 0 (global zero) to avoid duplicate entries in DDP.
+    It runs only on rank 0 (global zero) to avoid duplicate entries in DDP.
     """
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:

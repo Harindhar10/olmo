@@ -15,10 +15,10 @@ from transformers import PreTrainedTokenizerBase
 
 class MoleculeNetDataset(Dataset):
     """
-    Dataset class for MoleculeNet datasets.
+    This class wraps MoleculeNet CSV splits into a PyTorch dataset for classification and regression tasks.
 
-    Handles single-task, multi-task classification and regression.
-    Supports both classification head and LM head prompt formats.
+    It handles single-task and multi-task classification as well as regression.
+    It supports both classification head and LM head prompt formats.
 
     The class handles three distinct label regimes: binary 'single_task'
     (CrossEntropy-compatible 'long' labels), 'multi_task' with NaN masking
@@ -234,10 +234,10 @@ class MoleculeNetDataset(Dataset):
 
 class PretrainingDataset(Dataset):
     """
-    Dataset for causal language modeling pretraining on SMILES.
+    This class wraps SMILES strings as a PyTorch dataset for causal language model pretraining.
 
-    Simply formats SMILES strings for next-token prediction. Each SMILES is
-    prefixed with 'prefix' (default '"SMILES: "') and tokenised to a fixed
+    It formats each SMILES string for next-token prediction. Each SMILES is
+    prefixed with 'prefix' (default "SMILES: ") and tokenised to a fixed
     length with right-padding. The 'labels' tensor is identical to
     'input_ids' except that padding positions are set to '-100' so
     PyTorch's cross-entropy ignores them. A 'num_bytes' tensor records the
@@ -345,9 +345,9 @@ class PretrainingDataset(Dataset):
 
 class InstructionDataset(Dataset):
     """
-    Dataset for instruction tuning (USPTO-style).
+    This class wraps instruction/input/output tuples as a PyTorch dataset for causal LM instruction tuning.
 
-    Formats instruction/input/output tuples for causal LM training. Each
+    It formats each sample as an instruction/input/output tuple for next-token prediction training. Each
     sample is formatted as '"Instruction: ...\nInput: ...\nOutput: ..."'
     and tokenised on-the-fly (lazy tokenisation). Padding tokens in 'labels'
     are masked to '-100'. A 'num_bytes' field for BPB tracking is precomputed
