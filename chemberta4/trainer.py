@@ -30,6 +30,30 @@ class OLMoClassifier(pl.LightningModule):
     Supports single-task and multi-task classification.
     Can use either a classification head or LM head (Yes/No prediction).
     Supports QLoRA (4-bit), LoRA, and full finetuning.
+
+    Orchestrates the full classification training loop on top of OLMo (or any
+    decoder-only model). Model loading and LoRA/QLoRA setup are deferred to
+    'configure_model()' so the module can be safely instantiated on CPU before
+    a trainer is attached. Accuracy and AUROC are tracked per split; for
+    multi-task datasets, rows with all labels missing are excluded from the
+    metric update.
+
+    Examples
+    --------
+    >>> from chemberta4.trainer import OLMoClassifier
+    >>> clf = OLMoClassifier(
+    ...     model_name='allenai/OLMo-7B-hf',
+    ...     num_tasks=1,
+    ...     task_type='single_task',
+    ...     finetune_strategy='qlora',
+    ...     lr=2e-4,
+    ... )
+    >>> clf.hparams.num_tasks
+    1
+    >>> clf.hparams.finetune_strategy
+    'qlora'
+    >>> clf.model is None
+    True
     """
 
     def __init__(
@@ -73,6 +97,23 @@ class OLMoClassifier(pl.LightningModule):
             LoRA alpha (typically 2× rank).
         lora_dropout : float
             LoRA dropout rate.
+
+        Examples
+        --------
+        >>> from chemberta4.trainer import OLMoClassifier
+        >>> clf = OLMoClassifier(
+        ...     model_name='allenai/OLMo-7B-hf',
+        ...     num_tasks=1,
+        ...     task_type='single_task',
+        ...     finetune_strategy='qlora',
+        ...     lr=2e-4,
+        ... )
+        >>> clf.hparams.num_tasks
+        1
+        >>> clf.hparams.finetune_strategy
+        'qlora'
+        >>> clf.model is None
+        True
         """
         super().__init__()
         self.save_hyperparameters()
@@ -373,6 +414,20 @@ class OLMoRegressor(pl.LightningModule):
 
     Uses RMSE loss and supports label normalization.
     Reports denormalized metrics for interpretability.
+
+    Orchestrates the regression training loop with z-score label normalisation.
+    Labels stored in the dataset are already normalised; 'label_mean' and
+    'label_std' are passed at construction time so that '_denormalize' can
+    convert predictions back to the original scale for RMSE and MAE logging.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from chemberta4.trainer import OLMoRegressor
+    >>> reg = OLMoRegressor(label_mean=5.0, label_std=2.0)
+    >>> normalized = torch.tensor([0.0, 1.0, -1.0])
+    >>> reg._denormalize(normalized)
+    tensor([5., 7., 3.])
     """
 
     def __init__(
@@ -504,6 +559,15 @@ class OLMoRegressor(pl.LightningModule):
         -------
         torch.Tensor
             Denormalized values in the original label space.
+
+        Examples
+        --------
+        >>> import torch
+        >>> from chemberta4.trainer import OLMoRegressor
+        >>> reg = OLMoRegressor(label_mean=5.0, label_std=2.0)
+        >>> normalized = torch.tensor([0.0, 1.0, -1.0])
+        >>> reg._denormalize(normalized)
+        tensor([5., 7., 3.])
         """
         return values * self.hparams.label_std + self.hparams.label_mean
 
@@ -650,6 +714,26 @@ class OLMoPretrainer(pl.LightningModule):
 
     Used for pretraining on SMILES (ZINC20, PubChem) or
     instruction tuning (USPTO).
+
+    Handles causal LM training for both SMILES pretraining (ZINC20, PubChem)
+    and instruction tuning (USPTO). The same module is reused for both tasks
+    because both reduce to next-token prediction with cross-entropy loss. The
+    validation step additionally computes perplexity and bits-per-byte (BPB),
+    where BPB normalises the token-level loss by the UTF-8 byte length of the
+    input so that results are comparable across tokenisers.
+
+    Examples
+    --------
+    >>> from chemberta4.trainer import OLMoPretrainer
+    >>> pt = OLMoPretrainer(
+    ...     model_name='allenai/OLMo-7B-hf',
+    ...     finetune_strategy='qlora',
+    ...     lr=1e-4,
+    ... )
+    >>> pt.hparams.finetune_strategy
+    'qlora'
+    >>> pt.model is None
+    True
     """
 
     def __init__(
@@ -686,6 +770,19 @@ class OLMoPretrainer(pl.LightningModule):
             LoRA dropout rate.
         gradient_checkpointing : bool
             Whether to enable gradient checkpointing to reduce VRAM usage.
+
+        Examples
+        --------
+        >>> from chemberta4.trainer import OLMoPretrainer
+        >>> pt = OLMoPretrainer(
+        ...     model_name='allenai/OLMo-7B-hf',
+        ...     finetune_strategy='qlora',
+        ...     lr=1e-4,
+        ... )
+        >>> pt.hparams.finetune_strategy
+        'qlora'
+        >>> pt.model is None
+        True
         """
         super().__init__()
         self.save_hyperparameters()

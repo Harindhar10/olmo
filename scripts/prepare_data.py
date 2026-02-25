@@ -39,12 +39,20 @@ task_dict = {'bbbp': ['p_np'],
             }
 
 
-def generate_deepchem_splits(dataset_names: List, 
-                             output_dir: str, 
-                             clean_smiles: bool=True, 
+def generate_deepchem_splits(dataset_names: List,
+                             output_dir: str,
+                             clean_smiles: bool=True,
                              max_smiles_len: int=200):
     """
     Generates scaffold splits for DeepChem datasets, optionally cleans them, and saves as CSVs.
+
+    For each dataset name the corresponding 'dc.molnet.load_<name>' loader
+    is called with a 'ScaffoldSplitter' and a 'DummyFeaturizer' so that
+    the raw SMILES strings are preserved. When 'clean_smiles=True', any
+    molecule whose SMILES length exceeds 'max_smiles_len' is removed before
+    saving, which prevents excessively long sequences from dominating GPU
+    memory during tokenisation. Results are written to
+    '<output_dir>/<dataset_name>/{train,valid,test}.csv'.
 
     Parameters
     ----------
@@ -56,6 +64,16 @@ def generate_deepchem_splits(dataset_names: List,
         Whether to filter SMILES strings by max length.
     max_smiles_len: int
         Maximum allowed SMILES length if cleaning is enabled.
+
+    Examples
+    --------
+    >>> import tempfile, os
+    >>> from scripts.prepare_data import generate_deepchem_splits
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     generate_deepchem_splits(["bbbp"], output_dir=tmp, clean_smiles=True, max_smiles_len=200)
+    ...     splits = os.listdir(os.path.join(tmp, "bbbp"))
+    >>> sorted(splits)
+    ['test.csv', 'train.csv', 'valid.csv']
     """
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

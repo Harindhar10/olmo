@@ -1,9 +1,3 @@
-"""
-Distributed training utilities following nanochat patterns.
-
-Simple, explicit utilities for rank-aware operations.
-"""
-
 import logging
 import os
 import random
@@ -69,6 +63,12 @@ def set_seed(seed: int = 42) -> None:
 def get_device_map(device: torch.device) -> Dict[str, Any]:
     """Return a device map for model loading compatible with DDP.
 
+    In single-GPU or CPU training the map is '{"": device_index}' or
+    '{"": "cpu"}', which tells 'from_pretrained' to load all layers onto
+    one device. Returning '"auto"' would instead spread layers across GPUs,
+    which conflicts with PyTorch DDP that expects each process to own a single
+    replica; hence the explicit per-device map is used.
+
     Parameters
     ----------
     device : torch.device
@@ -78,6 +78,15 @@ def get_device_map(device: torch.device) -> Dict[str, Any]:
     -------
     Dict[str, Any]
         Device map dict suitable for 'from_pretrained(device_map=...)'.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from chemberta4.utils import get_device_map
+    >>> get_device_map(torch.device("cpu"))
+    {'': 'cpu'}
+    >>> get_device_map(torch.device("cuda:0"))
+    {'': 0}
     """
     if device.type == "cuda":
         return {"": device.index if device.index is not None else 0}
@@ -175,6 +184,11 @@ def prepare_config(cli_args: SimpleNamespace, task: SimpleNamespace) -> SimpleNa
 def format_params(num_params: int) -> str:
     """Format a raw parameter count into a human-readable string.
 
+    Uses SI-style suffixes: 'B' for billions (≥ 10⁹), 'M' for millions
+    (≥ 10⁶), 'K' for thousands (≥ 10³), and bare digits otherwise. All
+    values are formatted to two decimal places for consistency across model
+    sizes.
+
     Parameters
     ----------
     num_params : int
@@ -183,7 +197,19 @@ def format_params(num_params: int) -> str:
     Returns
     -------
     str
-        Formatted string such as '7.00B', '350.00M', or '512K'.
+        Formatted string such as '7.00B', '350.00M', or '512.00K'.
+
+    Examples
+    --------
+    >>> from chemberta4.utils import format_params
+    >>> format_params(7_000_000_000)
+    '7.00B'
+    >>> format_params(350_000_000)
+    '350.00M'
+    >>> format_params(512_000)
+    '512.00K'
+    >>> format_params(999)
+    '999'
     """
     if num_params >= 1e9:
         return f"{num_params / 1e9:.2f}B"

@@ -6,7 +6,7 @@ Supports classification (single_task, multi_task), regression, causal LM pretrai
 
 ## Acknowledgements
 
-Thanks to Saurav and Arjit for openly sharing their work. Parts of this repository are inspired by their approach.
+Thanks to @Sauravroy34 and @arjitrawat15 for sharing their work. Parts of this repository are inspired by their approach. This repo is prepared in part to facilitate GSoC student contributions by providing a base template for them to build on.
 
 ## Supported Datasets
 
@@ -35,6 +35,9 @@ pip install -r requirements.txt
 
 # (Optional) Install DeepChem for data preparation
 pip install --pre deepchem
+
+# Install the package
+pip install . -e
 ```
 
 <details>

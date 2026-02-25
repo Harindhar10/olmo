@@ -19,7 +19,33 @@ class MoleculeNetDataset(Dataset):
 
     Handles single-task, multi-task classification and regression.
     Supports both classification head and LM head prompt formats.
-    
+
+    The class handles three distinct label regimes: binary 'single_task'
+    (CrossEntropy-compatible 'long' labels), 'multi_task' with NaN masking
+    (for datasets like Tox21 where some tasks may be missing for a molecule),
+    and 'regression' with z-score normalisation computed from the training
+    set and applied at inference via 'label_stats'. When 'use_lm_head=True'
+    the prompt is reformatted as an 'Answer:' completion so that the LM head
+    can score 'Yes'/'No' token logits instead of a linear classifier.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from transformers import AutoTokenizer
+    >>> from chemberta4.data import MoleculeNetDataset
+    >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    >>> tokenizer.pad_token = tokenizer.eos_token
+    >>> df = pd.DataFrame({"smiles": ["CC", "CCO"], "label": [0, 1]})
+    >>> ds = MoleculeNetDataset(
+    ...     df, tokenizer, ["label"], "Is it soluble?",
+    ...     "single_task", "classification", max_len=32)
+    >>> sample = ds[0]
+    >>> list(sample.keys())
+    ['input_ids', 'attention_mask', 'labels']
+    >>> sample["labels"].item()
+    0
+    >>> sample["input_ids"].shape
+    torch.Size([32])
     """
 
     def __init__(
@@ -141,6 +167,25 @@ class MoleculeNetDataset(Dataset):
         Dict[str, torch.Tensor]
             Dict with 'input_ids', 'attention_mask', 'labels', and
             optionally 'label_mask' (for multi_task tasks).
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from transformers import AutoTokenizer
+        >>> from chemberta4.data import MoleculeNetDataset
+        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        >>> tokenizer.pad_token = tokenizer.eos_token
+        >>> df = pd.DataFrame({"smiles": ["CC", "CCO"], "label": [0, 1]})
+        >>> ds = MoleculeNetDataset(
+        ...     df, tokenizer, ["label"], "Is it soluble?",
+        ...     "single_task", "classification", max_len=32)
+        >>> sample = ds[0]
+        >>> list(sample.keys())
+        ['input_ids', 'attention_mask', 'labels']
+        >>> sample["labels"].item()
+        0
+        >>> sample["input_ids"].shape
+        torch.Size([32])
         """
         item = {
             "input_ids": self.encodings["input_ids"][idx],
@@ -154,11 +199,33 @@ class MoleculeNetDataset(Dataset):
     def get_label_stats(self) -> Optional[Dict[str, float]]:
         """Return label normalization statistics for regression tasks.
 
+        Intended to be called on the training split and the result passed as
+        'label_stats' to validation and test splits so that all splits are
+        normalised with the same statistics. Returns 'None' for
+        classification tasks where no normalisation is applied.
+
         Returns
         -------
         Dict[str, float] or None
             Dict with 'mean' and 'std' if task is regression,
             otherwise None.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> from transformers import AutoTokenizer
+        >>> from chemberta4.data import MoleculeNetDataset
+        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        >>> tokenizer.pad_token = tokenizer.eos_token
+        >>> df = pd.DataFrame({"smiles": ["CC", "CCO", "CCC"], "value": [1.0, 2.0, 3.0]})
+        >>> ds = MoleculeNetDataset(
+        ...     df, tokenizer, ["value"], "Predict logP.",
+        ...     "regression", "regression", max_len=32)
+        >>> stats = ds.get_label_stats()
+        >>> list(stats.keys())
+        ['mean', 'std']
+        >>> round(stats["mean"], 1)
+        2.0
         """
         if self.experiment_type == "regression":
             return {"mean": self.label_mean, "std": self.label_std}
@@ -169,8 +236,28 @@ class PretrainingDataset(Dataset):
     """
     Dataset for causal language modeling pretraining on SMILES.
 
-    Simply formats SMILES strings for next-token prediction.
+    Simply formats SMILES strings for next-token prediction. Each SMILES is
+    prefixed with 'prefix' (default '"SMILES: "') and tokenised to a fixed
+    length with right-padding. The 'labels' tensor is identical to
+    'input_ids' except that padding positions are set to '-100' so
+    PyTorch's cross-entropy ignores them. A 'num_bytes' tensor records the
+    UTF-8 byte length of each formatted string, which is used by the
+    validation loop to compute bits-per-byte (BPB).
 
+    Examples
+    --------
+    >>> from transformers import AutoTokenizer
+    >>> from chemberta4.data import PretrainingDataset
+    >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    >>> tokenizer.pad_token = tokenizer.eos_token
+    >>> ds = PretrainingDataset(["CC", "CCO"], tokenizer, max_len=16)
+    >>> sample = ds[0]
+    >>> list(sample.keys())
+    ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+    >>> sample["input_ids"].shape
+    torch.Size([16])
+    >>> (sample["labels"] == -100).any().item()
+    True
     """
 
     def __init__(
@@ -232,6 +319,21 @@ class PretrainingDataset(Dataset):
         Dict[str, torch.Tensor]
             Dict with 'input_ids', 'attention_mask', 'labels', and
             'num_bytes' (byte count used for BPB calculation).
+
+        Examples
+        --------
+        >>> from transformers import AutoTokenizer
+        >>> from chemberta4.data import PretrainingDataset
+        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        >>> tokenizer.pad_token = tokenizer.eos_token
+        >>> ds = PretrainingDataset(["CC", "CCO"], tokenizer, max_len=16)
+        >>> sample = ds[0]
+        >>> list(sample.keys())
+        ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+        >>> sample["input_ids"].shape
+        torch.Size([16])
+        >>> (sample["labels"] == -100).any().item()
+        True
         """
         return {
             "input_ids": self.encodings["input_ids"][idx],
@@ -245,7 +347,25 @@ class InstructionDataset(Dataset):
     """
     Dataset for instruction tuning (USPTO-style).
 
-    Formats instruction/input/output tuples for causal LM training.
+    Formats instruction/input/output tuples for causal LM training. Each
+    sample is formatted as '"Instruction: ...\nInput: ...\nOutput: ..."'
+    and tokenised on-the-fly (lazy tokenisation). Padding tokens in 'labels'
+    are masked to '-100'. A 'num_bytes' field for BPB tracking is precomputed
+    at '__init__' time to avoid repeated string encoding during training.
+
+    Examples
+    --------
+    >>> from transformers import AutoTokenizer
+    >>> from chemberta4.data import InstructionDataset
+    >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    >>> tokenizer.pad_token = tokenizer.eos_token
+    >>> data = [{"instruction": "Predict product.", "input": "CC + O", "output": "CCO"}]
+    >>> ds = InstructionDataset(data, tokenizer, max_len=32)
+    >>> sample = ds[0]
+    >>> list(sample.keys())
+    ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+    >>> sample["num_bytes"].item() > 0
+    True
     """
 
     def __init__(
@@ -298,6 +418,20 @@ class InstructionDataset(Dataset):
         Dict[str, torch.Tensor]
             Dict with 'input_ids', 'attention_mask', 'labels', and
             'num_bytes' (byte count used for BPB calculation).
+
+        Examples
+        --------
+        >>> from transformers import AutoTokenizer
+        >>> from chemberta4.data import InstructionDataset
+        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        >>> tokenizer.pad_token = tokenizer.eos_token
+        >>> data = [{"instruction": "Predict product.", "input": "CC + O", "output": "CCO"}]
+        >>> ds = InstructionDataset(data, tokenizer, max_len=32)
+        >>> sample = ds[0]
+        >>> list(sample.keys())
+        ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+        >>> sample["num_bytes"].item() > 0
+        True
         """
         item = self.data[idx]
 
