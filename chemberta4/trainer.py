@@ -163,7 +163,7 @@ class OLMoClassifier(pl.LightningModule):
                 bnb_4bit_use_double_quant=True,
             )
 
-        device_map = get_device_map(self.device)
+        device_map = 'cpu' #get_device_map(self.device)
 
         if hp.use_lm_head:
             # Use AutoModelForCausalLM with LM head
@@ -494,7 +494,7 @@ class OLMoRegressor(pl.LightningModule):
                 bnb_4bit_use_double_quant=True,
             )
 
-        device_map = get_device_map(self.device)
+        device_map = "cpu" #get_device_map(self.device)
 
         if hp.use_lm_head:
             base = AutoModelForCausalLM.from_pretrained(
