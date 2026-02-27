@@ -1,4 +1,4 @@
-data_dir: olmo/datasets/deepchem_splits
+data_dir: datasets
 
 # Model
 model_name: allenai/OLMo-7B-hf
