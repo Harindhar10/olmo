@@ -16,11 +16,11 @@ from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
-from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead
+from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
 from chemberta4.utils import get_device_map
 
 
@@ -412,22 +412,20 @@ class OLMoClassifier(pl.LightningModule):
 class OLMoRegressor(pl.LightningModule):
     """This class implements a PyTorch Lightning module for molecular regression tasks.
 
-    It uses RMSE loss and supports z-score label normalization.
-    It reports denormalized metrics for interpretability.
+    Supports two head types selected by 'use_lm_head':
 
-    Orchestrates the regression training loop with z-score label normalisation.
-    Labels stored in the dataset are already normalised; 'label_mean' and
-    'label_std' are passed at construction time so that '_denormalize' can
-    convert predictions back to the original scale for RMSE and MAE logging.
+    * 'False' (default): 'RegressionHead' — last-token pooling + linear layer,
+      trained with RMSE loss on raw labels.
+    * 'True': 'CausalLMRegressionHead' — teacher-forced causal LM with
+      cross-entropy loss during training; generates text and parses a float
+      with regex during validation/test for RMSE reporting.
 
     Examples
     --------
-    >>> import torch
     >>> from chemberta4.trainer import OLMoRegressor
-    >>> reg = OLMoRegressor(label_mean=5.0, label_std=2.0)
-    >>> normalized = torch.tensor([0.0, 1.0, -1.0])
-    >>> reg._denormalize(normalized)
-    tensor([5., 7., 3.])
+    >>> reg = OLMoRegressor()
+    >>> reg.hparams.use_lm_head
+    False
     """
 
     def __init__(
@@ -440,8 +438,7 @@ class OLMoRegressor(pl.LightningModule):
         lora_r: int = 32,
         lora_alpha: int = 64,
         lora_dropout: float = 0.05,
-        label_mean: float = 0.0,
-        label_std: float = 1.0,
+        use_lm_head: bool = False,
     ):
         """Initialise OLMoRegressor.
 
@@ -463,10 +460,10 @@ class OLMoRegressor(pl.LightningModule):
             LoRA alpha.
         lora_dropout : float
             LoRA dropout rate.
-        label_mean : float
-            Training-set label mean used for denormalization.
-        label_std : float
-            Training-set label std used for denormalization.
+        use_lm_head : bool
+            If 'True', use 'CausalLMRegressionHead' with cross-entropy training
+            and text-generation evaluation. If 'False', use 'RegressionHead'
+            with direct RMSE loss.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -499,29 +496,40 @@ class OLMoRegressor(pl.LightningModule):
 
         device_map = get_device_map(self.device)
 
-        base = AutoModel.from_pretrained(
-            hp.model_name,
-            quantization_config=bnb_config,
-            device_map=device_map,
-        )
+        if hp.use_lm_head:
+            base = AutoModelForCausalLM.from_pretrained(
+                hp.model_name,
+                quantization_config=bnb_config,
+                device_map=device_map,
+            )
+        else:
+            base = AutoModel.from_pretrained(
+                hp.model_name,
+                quantization_config=bnb_config,
+                device_map=device_map,
+            )
 
         if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
         if hp.finetune_strategy != "full_finetune":
+            lora_task_type = TaskType.CAUSAL_LM if hp.use_lm_head else "FEATURE_EXTRACTION"
             lora_cfg = LoraConfig(
                 r=hp.lora_r,
                 lora_alpha=hp.lora_alpha,
                 target_modules=["q_proj", "k_proj", "v_proj"],
                 lora_dropout=hp.lora_dropout,
                 bias="none",
-                task_type="FEATURE_EXTRACTION",
+                task_type=lora_task_type,
             )
             base = get_peft_model(base, lora_cfg)
 
         if self.global_rank == 0:
             base.print_trainable_parameters()
 
-        self.model = RegressionHead(base)
+        if hp.use_lm_head:
+            self.model = CausalLMRegressionHead(base, self.tokenizer)
+        else:
+            self.model = RegressionHead(base)
 
     def forward(
         self,
@@ -547,30 +555,6 @@ class OLMoRegressor(pl.LightningModule):
         """
         return self.model(input_ids, attention_mask, labels)
 
-    def _denormalize(self, values: torch.Tensor) -> torch.Tensor:
-        """Convert normalized predictions back to the original label scale.
-
-        Parameters
-        ----------
-        values : torch.Tensor
-            Normalized values to denormalize.
-
-        Returns
-        -------
-        torch.Tensor
-            Denormalized values in the original label space.
-
-        Examples
-        --------
-        >>> import torch
-        >>> from chemberta4.trainer import OLMoRegressor
-        >>> reg = OLMoRegressor(label_mean=5.0, label_std=2.0)
-        >>> normalized = torch.tensor([0.0, 1.0, -1.0])
-        >>> reg._denormalize(normalized)
-        tensor([5., 7., 3.])
-        """
-        return values * self.hparams.label_std + self.hparams.label_mean
-
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
         """Compute loss and log RMSE/MAE for a single batch.
 
@@ -586,27 +570,75 @@ class OLMoRegressor(pl.LightningModule):
         torch.Tensor
             Scalar loss tensor.
         """
+        if self.hparams.use_lm_head:
+            return self._clm_step(batch, stage)
+
         preds, loss = self(
             batch["input_ids"],
             batch["attention_mask"],
             batch["labels"],
         )
 
-        # Denormalize for metrics
-        preds_denorm = self._denormalize(preds)
-        labels_denorm = self._denormalize(batch["labels"])
+        rmse = torch.sqrt(torch.nn.functional.mse_loss(preds, batch["labels"]) + 1e-6)
+        mae = torch.mean(torch.abs(preds - batch["labels"]))
 
-        # Calculate denormalized metrics
-        mse = torch.mean((preds_denorm - labels_denorm) ** 2)
-        rmse = torch.sqrt(mse + 1e-6)
-        mae = torch.mean(torch.abs(preds_denorm - labels_denorm))
-
-        # Log
         self.log(f"{stage}/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{stage}/rmse", rmse, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{stage}/mae", mae, on_epoch=True, sync_dist=True)
 
         return loss
+
+    def _clm_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+        """Handle a batch for the CausalLMRegressionHead.
+
+        During training, computes and logs cross-entropy loss.
+        During validation/test, generates text, parses floats with regex,
+        and logs RMSE/MAE.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            Dict with 'input_ids', 'attention_mask', 'labels' (token IDs with
+            -100 masking), and 'label_values' (raw float targets, eval only).
+        stage : str
+            One of 'train', 'val', or 'test'.
+
+        Returns
+        -------
+        torch.Tensor
+            Cross-entropy loss for training, RMSE for validation/test.
+        """
+        if stage == "train":
+            _, loss = self(
+                batch["input_ids"],
+                batch["attention_mask"],
+                batch["labels"],
+            )
+            self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
+            return loss
+
+        # Evaluation: generate text and parse predicted numbers
+        parsed_preds = self.model.generate_and_parse(
+            batch["input_ids"],
+            batch["attention_mask"],
+            batch["labels"],
+        )
+        true_vals = batch["label_values"].to(parsed_preds.device)
+
+        valid = ~(torch.isnan(parsed_preds) | torch.isnan(true_vals))
+        if valid.any():
+            rmse = torch.sqrt(
+                ((parsed_preds[valid] - true_vals[valid]) ** 2).mean() + 1e-6
+            )
+            mae = torch.abs(parsed_preds[valid] - true_vals[valid]).mean()
+        else:
+            rmse = torch.tensor(float("nan"), device=self.device)
+            mae = torch.tensor(float("nan"), device=self.device)
+
+        self.log(f"{stage}/rmse", rmse, on_epoch=True, prog_bar=True, sync_dist=True)
+        self.log(f"{stage}/mae", mae, on_epoch=True, sync_dist=True)
+
+        return rmse
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Execute a single training step.

@@ -9,7 +9,7 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
-from typing import Optional, Dict, List, Any
+from typing import Dict, List
 from transformers import PreTrainedTokenizerBase
 
 
@@ -58,7 +58,6 @@ class MoleculeNetDataset(Dataset):
         experiment_type: str,
         max_len: int = 128,
         use_lm_head: bool = False,
-        label_stats: Optional[Dict[str, float]] = None,
         smiles_column: str = "smiles",
     ) -> None:
         """Initialise MoleculeNetDataset.
@@ -80,10 +79,9 @@ class MoleculeNetDataset(Dataset):
         max_len : int
             Maximum token sequence length for truncation/padding.
         use_lm_head : bool
-            If 'True', format prompts for Yes/No LM-head prediction.
-        label_stats : Dict[str, float], optional
-            Dict with 'mean' and 'std' keys for regression normalization.
-            Pass training-set stats when creating val/test datasets.
+            If 'True', format prompts for Yes/No LM-head prediction
+            (classification) or embed the answer in the text for teacher-forced
+            causal LM regression.
         smiles_column : str
             Name of the column containing SMILES strings.
         """
@@ -91,8 +89,6 @@ class MoleculeNetDataset(Dataset):
         self.task_type = task_type
         self.experiment_type = experiment_type
         self.num_tasks = len(task_columns)
-        self.label_mean = 0.0
-        self.label_std = 1.0
 
         # Process labels based on task type
         if task_type == "single_task":
@@ -111,21 +107,48 @@ class MoleculeNetDataset(Dataset):
             labels_array = np.nan_to_num(labels_array, nan=0.0)
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
-        elif experiment_type == "regression":
+        elif use_lm_head and experiment_type == "regression":
+            # CLM regression: embed the answer in the text; labels are token IDs
+            # with prompt tokens masked to -100 for teacher-forced CE training.
             df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
 
-            if label_stats is None:
-                # Compute normalization stats from this data (training set)
-                self.label_mean = float(labels.mean())
-                self.label_std = float(labels.std())
-            else:
-                # Use provided stats (for val/test sets)
-                self.label_mean = label_stats["mean"]
-                self.label_std = label_stats["std"]
+            full_texts = [
+                f"Molecule: {s}\nQuestion: {prompt}\nAnswer: {v:.5f}{tokenizer.eos_token}"
+                for s, v in zip(df[smiles_column], labels)
+            ]
+            prompt_texts = [
+                f"Molecule: {s}\nQuestion: {prompt}\nAnswer: "
+                for s in df[smiles_column]
+            ]
 
-            normalized = (labels - self.label_mean) / self.label_std
-            self.labels = torch.tensor(normalized, dtype=torch.float32)
+            self.encodings = tokenizer(
+                full_texts,
+                truncation=True,
+                padding="max_length",
+                max_length=max_len,
+                return_tensors="pt",
+            )
+
+            clm_labels = self.encodings["input_ids"].clone()
+            for i, pt in enumerate(prompt_texts):
+                prompt_enc = tokenizer(
+                    pt, truncation=True, max_length=max_len, return_tensors="pt"
+                )
+                prompt_len = prompt_enc["input_ids"].shape[1]
+                clm_labels[i, :prompt_len] = -100
+            clm_labels[clm_labels == tokenizer.pad_token_id] = -100
+
+            self.labels = clm_labels
+            self.label_values = torch.tensor(labels, dtype=torch.float32)
+            self.label_mask = None
+            self.num_samples = len(df)
+            return  # encodings already set above; skip the block below
+
+        elif experiment_type == "regression":
+            df = df.dropna(subset=task_columns).copy()
+            labels = df[task_columns[0]].values.astype(np.float32)
+            self.labels = torch.tensor(labels, dtype=torch.float32)
             self.label_mask = None
 
         else:
@@ -194,6 +217,8 @@ class MoleculeNetDataset(Dataset):
         }
         if self.label_mask is not None:
             item["label_mask"] = self.label_mask[idx]
+        if hasattr(self, "label_values"):
+            item["label_values"] = self.label_values[idx]
         return item
 
 

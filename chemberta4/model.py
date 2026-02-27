@@ -5,6 +5,7 @@ These are lightweight wrappers around the backbone (OLMo with LoRA).
 Each wrapper handles the task-specific output head and loss computation.
 """
 
+import re
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
@@ -532,3 +533,201 @@ class RegressionHead(nn.Module):
             loss = torch.sqrt(nn.functional.mse_loss(preds, labels) + 1e-6)
 
         return preds, loss
+
+
+class CausalLMRegressionHead(nn.Module):
+    """Regression head using the model's causal LM head for text generation.
+
+    Trains with cross-entropy loss using teacher-forced generation: the answer
+    number is embedded directly in the input text and prompt tokens are masked
+    to -100 in the labels tensor. Only the response tokens contribute to the
+    cross-entropy loss.
+
+    At evaluation, generates text from the prompt-only portion and parses the
+    first float from the decoded output using a regex pattern.
+
+    Examples
+    --------
+    >>> import torch, torch.nn as nn
+    >>> from types import SimpleNamespace
+    >>> from chemberta4.model import CausalLMRegressionHead
+    >>> class DummyCausalLM(nn.Module):
+    ...     def __init__(self):
+    ...         super().__init__()
+    ...         self.embed = nn.Embedding(256, 16)
+    ...         self.lm_head = nn.Linear(16, 256)
+    ...     def forward(self, input_ids, attention_mask, labels=None):
+    ...         h = self.embed(input_ids)
+    ...         logits = self.lm_head(h)
+    ...         loss = None
+    ...         if labels is not None:
+    ...             mask = labels != -100
+    ...             loss = nn.CrossEntropyLoss()(logits[mask], labels[mask])
+    ...         return SimpleNamespace(logits=logits, loss=loss)
+    ...     def generate(self, input_ids, attention_mask, **kwargs):
+    ...         return input_ids
+    >>> class DummyTokenizer:
+    ...     eos_token = "<eos>"
+    ...     eos_token_id = 0
+    ...     def decode(self, ids, skip_special_tokens=True):
+    ...         return "3.14"
+    >>> head = CausalLMRegressionHead(DummyCausalLM(), DummyTokenizer())
+    >>> input_ids = torch.zeros(2, 8, dtype=torch.long)
+    >>> mask = torch.ones(2, 8, dtype=torch.long)
+    >>> labels = torch.full((2, 8), -100, dtype=torch.long)
+    >>> labels[:, 6:] = 42
+    >>> logits, loss = head(input_ids, mask, labels)
+    >>> logits.shape
+    torch.Size([2, 8, 256])
+    >>> loss is not None
+    True
+    """
+
+    def __init__(self, model: nn.Module, tokenizer) -> None:
+        """Initialise CausalLMRegressionHead.
+
+        Parameters
+        ----------
+        model : nn.Module
+            A causal LM model with a language modelling head (e.g., OLMo loaded
+            via AutoModelForCausalLM). Must accept a 'labels' argument and
+            return an object with '.logits' and '.loss' attributes.
+        tokenizer : PreTrainedTokenizerBase
+            Tokenizer used to decode generated token IDs.
+        """
+        super().__init__()
+        self.model = model
+        self.tokenizer = tokenizer
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Run teacher-forced forward pass for cross-entropy training.
+
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Token IDs of shape '[batch, seq_len]'. The full sequence including
+            both the prompt and the answer number.
+        attention_mask : torch.Tensor
+            Attention mask of shape '[batch, seq_len]'.
+        labels : torch.Tensor, optional
+            Token IDs of shape '[batch, seq_len]' with prompt positions set to
+            -100. HuggingFace computes cross-entropy only on non-masked positions.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, Optional[torch.Tensor]]
+            Vocab logits of shape '[batch, seq_len, vocab_size]' and scalar
+            cross-entropy loss if labels are provided, else None.
+
+        Examples
+        --------
+        >>> import torch, torch.nn as nn
+        >>> from types import SimpleNamespace
+        >>> from chemberta4.model import CausalLMRegressionHead
+        >>> class DummyCausalLM(nn.Module):
+        ...     def __init__(self):
+        ...         super().__init__()
+        ...         self.embed = nn.Embedding(256, 16)
+        ...         self.lm_head = nn.Linear(16, 256)
+        ...     def forward(self, input_ids, attention_mask, labels=None):
+        ...         h = self.embed(input_ids)
+        ...         logits = self.lm_head(h)
+        ...         loss = None
+        ...         if labels is not None:
+        ...             mask = labels != -100
+        ...             loss = nn.CrossEntropyLoss()(logits[mask], labels[mask])
+        ...         return SimpleNamespace(logits=logits, loss=loss)
+        ...     def generate(self, input_ids, attention_mask, **kwargs):
+        ...         return input_ids
+        >>> class DummyTokenizer:
+        ...     eos_token = "<eos>"
+        ...     eos_token_id = 0
+        ...     def decode(self, ids, skip_special_tokens=True):
+        ...         return "3.14"
+        >>> head = CausalLMRegressionHead(DummyCausalLM(), DummyTokenizer())
+        >>> input_ids = torch.zeros(2, 8, dtype=torch.long)
+        >>> mask = torch.ones(2, 8, dtype=torch.long)
+        >>> labels = torch.full((2, 8), -100, dtype=torch.long)
+        >>> labels[:, 6:] = 42
+        >>> logits, loss = head(input_ids, mask, labels)
+        >>> logits.shape
+        torch.Size([2, 8, 256])
+        >>> loss is not None
+        True
+        """
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+        )
+        return outputs.logits, outputs.loss
+
+    def generate_and_parse(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        label_ids: torch.Tensor,
+        max_new_tokens: int = 15,
+    ) -> torch.Tensor:
+        """Generate text from the prompt and parse the first float from the output.
+
+        Uses the label mask to determine where the prompt ends, then generates
+        from that position and applies a regex to extract the predicted number.
+
+        Parameters
+        ----------
+        input_ids : torch.Tensor
+            Full token IDs of shape '[batch, seq_len]' (prompt + answer).
+        attention_mask : torch.Tensor
+            Attention mask of shape '[batch, seq_len]'.
+        label_ids : torch.Tensor
+            Token-level labels of shape '[batch, seq_len]' with prompt tokens
+            set to -100. The first non-(-100) position marks the answer start.
+        max_new_tokens : int
+            Maximum number of tokens to generate for the answer.
+
+        Returns
+        -------
+        torch.Tensor
+            Parsed float predictions of shape '[batch]'. Unparseable outputs
+            are set to 'float("nan")'.
+        """
+        preds = []
+
+        for i in range(input_ids.shape[0]):
+            # Find where the response starts (first token not masked to -100)
+            response_mask = (label_ids[i] != -100)
+            answer_start_idx = response_mask.int().argmax().item()
+
+            if answer_start_idx == 0:
+                # Entire sequence is prompt (no response tokens found)
+                preds.append(float("nan"))
+                continue
+
+            prompt_ids = input_ids[i : i + 1, :answer_start_idx]
+            prompt_mask = attention_mask[i : i + 1, :answer_start_idx]
+
+            with torch.no_grad():
+                output_ids = self.model.generate(
+                    input_ids=prompt_ids,
+                    attention_mask=prompt_mask,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+
+            generated_ids = output_ids[0, answer_start_idx:]
+            generated_text = self.tokenizer.decode(
+                generated_ids, skip_special_tokens=True
+            )
+
+            match = re.search(r"[-+]?\d*\.\d+|\d+", generated_text)
+            preds.append(float(match.group()) if match else float("nan"))
+
+        return torch.tensor(preds, dtype=torch.float32, device=input_ids.device)

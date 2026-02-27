@@ -45,7 +45,8 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
     test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
-    # Create training dataset (computes normalization stats)
+    use_lm_head = getattr(args, "use_lm_head", False)
+
     train_ds = MoleculeNetDataset(
         train_df,
         tokenizer,
@@ -54,9 +55,8 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
+        use_lm_head=use_lm_head,
     )
-
-    # Create val/test datasets with training stats
     val_ds = MoleculeNetDataset(
         val_df,
         tokenizer,
@@ -65,7 +65,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        label_stats=label_stats,
+        use_lm_head=use_lm_head,
     )
     test_ds = MoleculeNetDataset(
         test_df,
@@ -75,7 +75,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        label_stats=label_stats,
+        use_lm_head=use_lm_head,
     )
 
     log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
@@ -101,8 +101,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
-        label_mean=label_stats["mean"],
-        label_std=label_stats["std"],
+        use_lm_head=use_lm_head,
     )
 
     # Callbacks
@@ -147,8 +146,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         )
         wandb.config.update({
             "task": task_name,
-            "label_mean": label_stats["mean"],
-            "label_std": label_stats["std"],
             "num_devices": num_devices,
             "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
         })
