@@ -44,11 +44,6 @@ for explicit, simple multi-GPU support.
    (e.g., ``classification.yaml``, ``regression.yaml``).
    CLI values take precedence; the ``datasets`` key is skipped as it is routing information only.
 
-.. function:: format_params(num_params: int) -> str
-
-   Formats a raw parameter count into a human-readable string such as
-   ``'7.00B'``, ``'350.00M'``, or ``'512K'``.
-
 ----
 
 chemberta4.callbacks
