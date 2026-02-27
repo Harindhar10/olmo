@@ -5,7 +5,7 @@ Provides OLMoClassifier, OLMoRegressor, and OLMoPretrainer modules
 with support for QLoRA and full finetuning.
 """
 
-import math
+
 from typing import Any, Dict, Optional
 
 import torch
@@ -750,9 +750,7 @@ class OLMoPretrainer(pl.LightningModule):
     The module handles causal LM training for both SMILES pretraining (ZINC20, PubChem)
     and instruction tuning (USPTO). The same module is reused for both tasks
     because both reduce to next-token prediction with cross-entropy loss. The
-    validation step additionally computes perplexity and bits-per-byte (BPB),
-    where BPB normalises the token-level loss by the UTF-8 byte length of the
-    input so that results are comparable across tokenisers.
+    validation step additionally computes perplexity.
 
     Examples
     --------
@@ -924,12 +922,12 @@ class OLMoPretrainer(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        """Compute loss, perplexity, and BPB for a validation batch.
+        """Compute loss and perplexity for a validation batch.
 
         Parameters
         ----------
         batch : Dict[str, torch.Tensor]
-            Batch with 'input_ids', 'attention_mask', 'labels', and 'num_bytes'.
+            Batch with 'input_ids', 'attention_mask', and 'labels'.
         batch_idx : int
             Index of the current batch.
 
@@ -948,14 +946,8 @@ class OLMoPretrainer(pl.LightningModule):
         # Perplexity
         perplexity = torch.exp(loss)
 
-        # BPB: bits per byte
-        num_tokens = (batch["labels"] != -100).sum()
-        num_bytes = batch["num_bytes"].sum()
-        bpb = (loss * num_tokens) / (num_bytes * math.log(2))
-
         self.log("val/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log("val/perplexity", perplexity, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log("val/bpb", bpb, on_epoch=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self) -> Dict:

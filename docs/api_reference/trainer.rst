@@ -76,7 +76,7 @@ All trainers use AdamW with linear warmup and cosine annealing.
 .. class:: OLMoPretrainer(pl.LightningModule)
 
    Lightning module for causal LM pretraining on SMILES datasets or instruction tuning.
-   Reports perplexity and bits-per-byte (BPB) during validation.
+   Reports perplexity during validation.
 
    .. method:: __init__(model_name="allenai/OLMo-7B-hf", finetune_strategy="qlora", lr=1e-4, weight_decay=1e-4, warmup_ratio=0.15, lora_r=64, lora_alpha=128, lora_dropout=0.05, gradient_checkpointing=True)
 
@@ -96,7 +96,7 @@ All trainers use AdamW with linear warmup and cosine annealing.
 
    .. method:: validation_step(batch, batch_idx)
 
-      Computes loss, perplexity (``exp(loss)``), and bits-per-byte (BPB).
+      Computes loss and perplexity (``exp(loss)``).
 
    .. method:: configure_optimizers()
 

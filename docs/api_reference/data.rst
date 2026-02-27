@@ -38,8 +38,7 @@ All datasets return dictionaries of ``torch.Tensor`` compatible with PyTorch Dat
 
    .. method:: __getitem__(idx)
 
-      Returns a dict with ``input_ids``, ``attention_mask``, ``labels``,
-      and ``num_bytes`` for bits-per-byte (BPB) calculation.
+      Returns a dict with ``input_ids``, ``attention_mask``, and ``labels``.
 
 .. class:: InstructionDataset(Dataset)
 
@@ -57,5 +56,4 @@ All datasets return dictionaries of ``torch.Tensor`` compatible with PyTorch Dat
 
    .. method:: __getitem__(idx)
 
-      Returns a dict with ``input_ids``, ``attention_mask``, ``labels``,
-      and ``num_bytes`` for BPB calculation.
+      Returns a dict with ``input_ids``, ``attention_mask``, and ``labels``.

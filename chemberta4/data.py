@@ -90,6 +90,7 @@ class MoleculeNetDataset(Dataset):
         self.task_type = task_type
         self.experiment_type = experiment_type
         self.num_tasks = len(task_columns)
+        self.use_lm_head = use_lm_head
 
         # Process labels based on task type
         if task_type == "single_task":
@@ -161,7 +162,28 @@ class MoleculeNetDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Return a single tokenized sample.
+        """
+        Retrieve a single dataset sample formatted for transformer training.
+
+        This method supports two modes of operation:
+
+        1. Standard encoder-style training (classification or regression)
+        Returns pre-tokenized inputs stored in ``self.encodings`` along with
+        their corresponding labels. Optionally includes a ``label_mask`` for
+        multi-task setups with missing labels.
+
+        2. Causal language modeling (CLM) regression mode
+        Triggered when ``self.use_lm_head`` is True and
+        ``self.experiment_type == "regression"``.
+        In this case:
+            - The full prompt + target text is tokenized.
+            - ``labels`` are initialized as a clone of ``input_ids``.
+            - Tokens corresponding to the prompt portion (before
+            ``self._clm_separator``) are masked with -100 so that loss is
+            computed only on the target portion.
+            - Padding tokens are also masked with -100.
+            - The original scalar regression value is returned separately as
+            ``label_values``.
 
         Parameters
         ----------
@@ -193,8 +215,7 @@ class MoleculeNetDataset(Dataset):
         >>> sample["input_ids"].shape
         torch.Size([32])
         """
-        # CLM regression: lazy per-sample tokenization (avoids BPE boundary issues)
-        if hasattr(self, "_clm_texts"):
+        if self.use_lm_head and self.experiment_type == "regression":
             text = self._clm_texts[idx]
             enc = self._tokenizer(
                 text,
@@ -246,9 +267,7 @@ class PretrainingDataset(Dataset):
     prefixed with 'prefix' (default "SMILES: ") and tokenised to a fixed
     length with right-padding. The 'labels' tensor is identical to
     'input_ids' except that padding positions are set to '-100' so
-    PyTorch's cross-entropy ignores them. A 'num_bytes' tensor records the
-    UTF-8 byte length of each formatted string, which is used by the
-    validation loop to compute bits-per-byte (BPB).
+    PyTorch's cross-entropy ignores them.
 
     Examples
     --------
@@ -301,11 +320,6 @@ class PretrainingDataset(Dataset):
         self.labels = self.encodings["input_ids"].clone()
         self.labels[self.labels == tokenizer.pad_token_id] = -100
 
-        # Byte counts for BPB calculation
-        self.num_bytes = torch.tensor(
-            [len(t.encode("utf-8")) for t in texts], dtype=torch.long
-        )
-
         self.num_samples = len(smiles_list)
 
     def __len__(self) -> int:
@@ -323,8 +337,7 @@ class PretrainingDataset(Dataset):
         Returns
         -------
         Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels', and
-            'num_bytes' (byte count used for BPB calculation).
+            Dict with 'input_ids', 'attention_mask', and 'labels'.
 
         Examples
         --------
@@ -335,7 +348,7 @@ class PretrainingDataset(Dataset):
         >>> ds = PretrainingDataset(["CC", "CCO"], tokenizer, max_len=16)
         >>> sample = ds[0]
         >>> list(sample.keys())
-        ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+        ['input_ids', 'attention_mask', 'labels']
         >>> sample["input_ids"].shape
         torch.Size([16])
         >>> (sample["labels"] == -100).any().item()
@@ -345,7 +358,6 @@ class PretrainingDataset(Dataset):
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
             "labels": self.labels[idx],
-            "num_bytes": self.num_bytes[idx],
         }
 
 
@@ -356,8 +368,7 @@ class InstructionDataset(Dataset):
     It formats each sample as an instruction/input/output tuple for next-token prediction training. Each
     sample is formatted as '"Instruction: ...\nInput: ...\nOutput: ..."'
     and tokenised on-the-fly (lazy tokenisation). Padding tokens in 'labels'
-    are masked to '-100'. A 'num_bytes' field for BPB tracking is precomputed
-    at '__init__' time to avoid repeated string encoding during training.
+    are masked to '-100'.
 
     Examples
     --------
@@ -369,9 +380,7 @@ class InstructionDataset(Dataset):
     >>> ds = InstructionDataset(data, tokenizer, max_len=32)
     >>> sample = ds[0]
     >>> list(sample.keys())
-    ['input_ids', 'attention_mask', 'labels', 'num_bytes']
-    >>> sample["num_bytes"].item() > 0
-    True
+    ['input_ids', 'attention_mask', 'labels']
     """
 
     def __init__(
@@ -397,16 +406,6 @@ class InstructionDataset(Dataset):
         # Materialize if streaming
         self.data = list(data)
 
-        # Precompute byte counts for BPB calculation
-        self.num_bytes = [
-            len(
-                f"Instruction: {item['instruction']}\n"
-                f"Input: {item['input']}\n"
-                f"Output: {item['output']}".encode("utf-8")
-            )
-            for item in self.data
-        ]
-
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.data)
@@ -422,8 +421,7 @@ class InstructionDataset(Dataset):
         Returns
         -------
         Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels', and
-            'num_bytes' (byte count used for BPB calculation).
+            Dict with 'input_ids', 'attention_mask', and 'labels'.
 
         Examples
         --------
@@ -435,7 +433,7 @@ class InstructionDataset(Dataset):
         >>> ds = InstructionDataset(data, tokenizer, max_len=32)
         >>> sample = ds[0]
         >>> list(sample.keys())
-        ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+        ['input_ids', 'attention_mask', 'labels']
         >>> sample["num_bytes"].item() > 0
         True
         """
@@ -464,6 +462,5 @@ class InstructionDataset(Dataset):
             "input_ids": encodings["input_ids"].squeeze(0),
             "attention_mask": encodings["attention_mask"].squeeze(0),
             "labels": labels.squeeze(0),
-            "num_bytes": torch.tensor(self.num_bytes[idx], dtype=torch.long),
         }
 
