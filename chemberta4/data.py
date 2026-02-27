@@ -196,41 +196,6 @@ class MoleculeNetDataset(Dataset):
             item["label_mask"] = self.label_mask[idx]
         return item
 
-    def get_label_stats(self) -> Optional[Dict[str, float]]:
-        """Return label normalization statistics for regression tasks.
-
-        Intended to be called on the training split and the result passed as
-        'label_stats' to validation and test splits so that all splits are
-        normalised with the same statistics. Returns 'None' for
-        classification tasks where no normalisation is applied.
-
-        Returns
-        -------
-        Dict[str, float] or None
-            Dict with 'mean' and 'std' if task is regression,
-            otherwise None.
-
-        Examples
-        --------
-        >>> import pandas as pd
-        >>> from transformers import AutoTokenizer
-        >>> from chemberta4.data import MoleculeNetDataset
-        >>> tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        >>> tokenizer.pad_token = tokenizer.eos_token
-        >>> df = pd.DataFrame({"smiles": ["CC", "CCO", "CCC"], "value": [1.0, 2.0, 3.0]})
-        >>> ds = MoleculeNetDataset(
-        ...     df, tokenizer, ["value"], "Predict logP.",
-        ...     "regression", "regression", max_len=32)
-        >>> stats = ds.get_label_stats()
-        >>> list(stats.keys())
-        ['mean', 'std']
-        >>> round(stats["mean"], 1)
-        2.0
-        """
-        if self.experiment_type == "regression":
-            return {"mean": self.label_mean, "std": self.label_std}
-        return None
-
 
 class PretrainingDataset(Dataset):
     """

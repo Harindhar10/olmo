@@ -228,6 +228,7 @@ class ClassificationHead(nn.Module):
                 # Masked loss for missing labels
                 loss_fct = nn.BCEWithLogitsLoss(reduction="none")
                 loss = loss_fct(logits, labels)
+                # Returns mean BCE loss over only valid (non-missing) labels
                 return (loss * label_mask.float()).sum() / label_mask.float().sum()
             return nn.BCEWithLogitsLoss()(logits, labels)
 

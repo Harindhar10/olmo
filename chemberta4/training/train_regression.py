@@ -56,10 +56,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         args.max_len,
     )
 
-    # Get normalization stats from training set
-    label_stats = train_ds.get_label_stats()
-    log0(f"Label normalization - Mean: {label_stats['mean']:.4f}, Std: {label_stats['std']:.4f}")
-
     # Create val/test datasets with training stats
     val_ds = MoleculeNetDataset(
         val_df,

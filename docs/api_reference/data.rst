@@ -23,11 +23,6 @@ All datasets return dictionaries of ``torch.Tensor`` compatible with PyTorch Dat
       Returns a dict of tensors with ``input_ids``, ``attention_mask``, ``labels``,
       and optionally ``label_mask`` for multi-task datasets.
 
-   .. method:: get_label_stats()
-
-      Returns ``{'mean': float, 'std': float}`` for regression datasets, or ``None``
-      for classification datasets.
-
 .. class:: PretrainingDataset(Dataset)
 
    Dataset for causal language model pretraining on SMILES strings.
