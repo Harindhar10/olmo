@@ -13,7 +13,7 @@ class TestMoleculeNetSingleTask:
     CrossEntropyLoss compatibility.
     """
 
-    def get_sample_dataset(self, load_tokenizer, df=None, **kwargs):
+    def get_sample_dataset(self, load_tokenizer, df=None, **kwargs) -> MoleculeNetDataset:
         if df is None:
             df = pd.DataFrame({
                 "smiles": ["CC", "CCO", "CCC", "CCCO"],

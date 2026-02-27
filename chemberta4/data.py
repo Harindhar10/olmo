@@ -15,19 +15,30 @@ from transformers import PreTrainedTokenizerBase
 
 class MoleculeNetDataset(Dataset):
     """
-    TODO: Update docstring to reflect recent change.
-    This class wraps MoleculeNet CSV splits into a PyTorch dataset for classification and regression tasks.
+    A PyTorch dataset that wraps MoleculeNet CSV data for molecular property
+    prediction. It supports classification (single-task and multi-task) and
+    regression, with two prompt formats depending on whether a linear head or
+    the language model head is used.
 
-    It handles single-task and multi-task classification as well as regression.
-    It supports both classification head and LM head prompt formats.
+    Label processing depends on the combination of 'task_type' and
+    'experiment_type':
 
-    The class handles three distinct label regimes: binary 'single_task'
-    (CrossEntropy-compatible 'long' labels), 'multi_task' with NaN masking
-    (for datasets like Tox21 where some tasks may be missing for a molecule),
-    and 'regression' with z-score normalisation computed from the training
-    set and applied at inference via 'label_stats'. When 'use_lm_head=True'
-    the prompt is reformatted as an 'Answer:' completion so that the LM head
-    can score 'Yes'/'No' token logits instead of a linear classifier.
+    * **single_task classification** — rows with missing labels are dropped;
+      labels are stored as integers for cross-entropy loss.
+    * **multi_task classification** — all rows are kept; a boolean mask tracks
+      which labels are present so that missing values (NaN) are excluded from
+      the loss.
+    * **Causal LM regression** ('use_lm_head=True', 'experiment_type="regression"')
+      — the target number is embedded directly into the prompt text (e.g.
+      ``"### Response:\\n3.14159"``). Tokenization happens per-sample in
+      ``__getitem__`` and prompt tokens are masked with -100 so that only the
+      answer portion contributes to the cross-entropy loss.
+    * **Standard regression** — rows with missing labels are dropped; labels
+      are stored as floats for RMSE loss.
+
+    When 'use_lm_head=True' for classification, the prompt ends with
+    ``"Answer:"`` so the language model head can score Yes/No token
+    probabilities instead of using a separate linear classifier.
 
     Examples
     --------

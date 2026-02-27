@@ -431,9 +431,7 @@ class RegressionHead(nn.Module):
 
     Takes a backbone 'nn.Module' and appends a single linear unit that maps
     the last-token hidden state to a scalar. Loss is the square-root of MSE
-    (RMSE) with a small epsilon (1e-6) added for numerical stability. Labels
-    passed to 'forward' should already be z-score normalised; the caller is
-    responsible for denormalisation when reporting metrics.
+    (RMSE) with a small epsilon (1e-6) added for numerical stability.
 
     Examples
     --------

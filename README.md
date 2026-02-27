@@ -37,7 +37,7 @@ pip install -r requirements.txt
 pip install --pre deepchem
 
 # Install the package
-pip install . -e
+pip install -e .
 ```
 
 <details>
@@ -65,13 +65,13 @@ Download MoleculeNet datasets and create scaffold splits:
 
 ```bash
 # Single dataset
-python prepare_data.py \
+python scripts/prepare_data.py \
     --split_type deepchem \
     --datasets bbbp \
     --data_dir datasets/deepchem_splits
 
 # Multiple datasets at once
-python prepare_data.py \
+python scripts/prepare_data.py \
     --split_type deepchem \
     --datasets bbbp bace hiv clintox tox21 sider delaney freesolv lipophilicity \
     --data_dir datasets/deepchem_splits
@@ -85,48 +85,48 @@ All experiments are launched via `run_experiment.py`. Pass `--datasets` followed
 
 ```bash
 # Single dataset — QLoRA by default, scales across all available GPUs
-python run_experiment.py --datasets bbbp
+python scripts/run_experiment.py --datasets bbbp
 
 # Multiple datasets in sequence (can mix task types)
-python run_experiment.py --datasets bbbp clearance zinc20
+python scripts/run_experiment.py --datasets bbbp clearance zinc20
 
 # Override defaults
-python run_experiment.py --datasets bbbp --lr 0.001 --epochs 20 --batch_size 8
+python scripts/run_experiment.py --datasets bbbp --lr 0.001 --epochs 20 --batch_size 8
 ```
 
 **Classification** (single_task or multi_task):
 
 ```bash
 # QLoRA (default)
-python run_experiment.py --datasets bbbp
+python scripts/run_experiment.py --datasets bbbp
 
 # LM-head approach (Yes/No token prediction instead of a linear head)
-python run_experiment.py --datasets bace_classification --use_lm_head
+python scripts/run_experiment.py --datasets bace_classification --use_lm_head
 
 # LoRA without 4-bit quantization
-python run_experiment.py --datasets bbbp --finetune_strategy lora
+python scripts/run_experiment.py --datasets bbbp --finetune_strategy lora
 
 # Full fine-tuning (no LoRA)
-python run_experiment.py --datasets clintox --finetune_strategy full_finetune --lr 1e-5
+python scripts/run_experiment.py --datasets clintox --finetune_strategy full_finetune --lr 1e-5
 ```
 
 **Regression**:
 
 ```bash
-python run_experiment.py --datasets clearance --epochs 30
-python run_experiment.py --datasets delaney
+python scripts/run_experiment.py --datasets clearance --epochs 30
+python scripts/run_experiment.py --datasets delaney
 ```
 
 **Pretraining** (causal LM on SMILES):
 
 ```bash
-python run_experiment.py --datasets zinc20 --num_samples 1000000 --epochs 1
+python scripts/run_experiment.py --datasets zinc20 --num_samples 1000000 --epochs 1
 ```
 
 **Instruction tuning** (reaction prediction):
 
 ```bash
-python run_experiment.py --datasets uspto --num_samples 10000
+python scripts/run_experiment.py --datasets uspto --num_samples 10000
 ```
 
 Training automatically uses DDP across every available GPU (`devices=-1, strategy="ddp"` in PyTorch Lightning). No `torchrun` wrapper needed.
@@ -150,7 +150,7 @@ Training automatically uses DDP across every available GPU (`devices=-1, strateg
 LoRA without quantization — lower memory reduction than QLoRA, but no 4-bit precision loss.
 
 ```bash
-python run_experiment.py --datasets bbbp --finetune_strategy lora
+python scripts/run_experiment.py --datasets bbbp --finetune_strategy lora
 ```
 
 ### Full fine-tuning
@@ -158,7 +158,7 @@ python run_experiment.py --datasets bbbp --finetune_strategy lora
 Disable LoRA and train all parameters. Requires significantly more VRAM.
 
 ```bash
-python run_experiment.py --datasets bbbp --finetune_strategy full_finetune --lr 1e-5
+python scripts/run_experiment.py --datasets bbbp --finetune_strategy full_finetune --lr 1e-5
 ```
 
 ### Finetune strategy summary
@@ -182,19 +182,19 @@ For best results, chain the stages:
 
 ```bash
 # Stage 1: Pretrain on SMILES
-python run_experiment.py \
+python scripts/run_experiment.py \
     --datasets zinc20 \
     --num_samples 10000000 \
     --hub_name youruser/OLMo-7B-ZINC20
 
 # Stage 2: Instruction-tune on reactions
-python run_experiment.py \
+python scripts/run_experiment.py \
     --datasets uspto \
     --model_name youruser/OLMo-7B-ZINC20 \
     --hub_name youruser/OLMo-7B-ZINC-USPTO
 
 # Stage 3: Fine-tune on downstream task
-python run_experiment.py \
+python scripts/run_experiment.py \
     --datasets bbbp \
     --model_name youruser/OLMo-7B-ZINC-USPTO
 ```
@@ -218,32 +218,36 @@ my_dataset:
 Then prepare your data (a CSV with `smiles` and label columns) and train:
 
 ```bash
-python run_experiment.py --datasets my_dataset --data_dir path/to/splits
+python scripts/run_experiment.py --datasets my_dataset --data_dir path/to/splits
 ```
 
 ## Repository Structure
 
 ```
-olmo-1/
+olmo/
 ├── chemberta4/                  # Core library
-│   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead
+│   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
 │   ├── data.py                # MoleculeNetDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
 │   ├── callbacks.py           # Wandb logging callback
-│   └── utils.py               # Rank-aware utilities for DDP
+│   ├── utils.py               # Rank-aware utilities for DDP
+│   └── training/              # Training functions (called by run_experiment.py)
+│       ├── train_classification.py
+│       ├── train_regression.py
+│       ├── pretrain.py
+│       └── train_instruction.py
 ├── configs/                    # Default hyperparameters and task registry
 │   ├── tasks.yaml             # All supported datasets and their configs
 │   ├── classification.yaml    # Default classification hyperparameters
 │   ├── regression.yaml        # Default regression hyperparameters
 │   ├── pretrain.yaml          # Default pretraining hyperparameters
 │   └── instruction.yaml       # Default instruction tuning hyperparameters
-├── training/                   # Training functions (called by run_experiment.py)
-│   ├── train_classification.py
-│   ├── train_regression.py
-│   ├── pretrain.py
-│   └── train_instruction.py
-├── run_experiment.py           # Unified entry point for all experiments
-├── prepare_data.py             # Download & scaffold-split datasets
+├── scripts/                    # Entry points
+│   ├── run_experiment.py      # Unified entry point for all experiments
+│   └── prepare_data.py        # Download & scaffold-split datasets
+├── tests/                      # Test suite
+├── docs/                       # Documentation
+├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```
