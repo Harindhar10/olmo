@@ -1,21 +1,20 @@
 # ChemBERTa4
 
-Minimal library for molecular property prediction with [OLMo-7B](https://huggingface.co/allenai/OLMo-7B-hf).
+Library for molecular property prediction with [OLMo-7B](https://huggingface.co/allenai/OLMo-7B-hf).
 
-Supports classification (single_task, multi_task), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. New datasets can be added through a task registry in ~5 lines. Experiments are tracked with wandb.
+Supports classification (single_task, multi_task), regression, causal LM pretraining on SMILES, and instruction tuning. Training uses QLoRA (4-bit) by default and automatically scales across all available GPUs via PyTorch Lightning DDP. Experiments are tracked with wandb.
 
 ## Acknowledgements
 
-Thanks to @Sauravroy34 and @arjitrawat15 for sharing their work. Parts of this repository are inspired by their approach. This repo is prepared in part to facilitate GSoC student contributions by providing a base template for them to build on.
+Thanks to @Sauravroy34 [Code](https://colab.research.google.com/drive/1Kr29LdFx5HWYyKHrBYKv21Ei5jsTaett?usp=sharing) and @arjitrawat15 [Code](https://www.kaggle.com/code/arjitrawat15/training-3) for sharing their work. Parts of this repository are inspired by their approach. This repo is prepared in part to facilitate GSoC student contributions by providing a base template for them to build on.
 
 ## Supported Datasets
 
 | Category | Datasets | Task Type |
 |---|---|---|
 | **Classification** | BBBP, BACE, HIV, ClinTox | `single_task` |
-| **Classification** | SIDER (27 side-effect labels) | `multi_task` |
-| **Classification** | Tox21 (12 toxicity assays) | `multi_task` |
-| **Regression** | Delaney (ESOL), FreeSolv, Lipophilicity, Clearance, BACE | Continuous |
+| **Classification** | SIDER (27 side-effect labels), Tox21 (12 toxicity assays)| `multi_task` |
+| **Regression** | Delaney (ESOL), FreeSolv, Lipophilicity, Clearance, BACE |
 | **Pretraining** | ZINC20, PubChem | Causal LM |
 | **Instruction Tuning** | USPTO | Reaction prediction |
 
@@ -259,7 +258,7 @@ Training metrics are logged via wandb:
 | Task Type | Metrics |
 |---|---|
 | Classification | Accuracy, ROC-AUC |
-| Regression | RMSE, MAE (denormalized) |
+| Regression | RMSE, MAE |
 
 Early stopping (patience = 7) and model checkpointing are enabled by default, monitored on the validation metric defined in each task config.
 
