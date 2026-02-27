@@ -278,7 +278,7 @@ class PretrainingDataset(Dataset):
     >>> ds = PretrainingDataset(["CC", "CCO"], tokenizer, max_len=16)
     >>> sample = ds[0]
     >>> list(sample.keys())
-    ['input_ids', 'attention_mask', 'labels', 'num_bytes']
+    ['input_ids', 'attention_mask', 'labels']
     >>> sample["input_ids"].shape
     torch.Size([16])
     >>> (sample["labels"] == -100).any().item()
@@ -434,8 +434,6 @@ class InstructionDataset(Dataset):
         >>> sample = ds[0]
         >>> list(sample.keys())
         ['input_ids', 'attention_mask', 'labels']
-        >>> sample["num_bytes"].item() > 0
-        True
         """
         item = self.data[idx]
 
