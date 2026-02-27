@@ -39,6 +39,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
 
     # Load data
     train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")

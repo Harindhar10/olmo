@@ -15,6 +15,7 @@ from transformers import PreTrainedTokenizerBase
 
 class MoleculeNetDataset(Dataset):
     """
+    TODO: Update docstring to reflect recent change.
     This class wraps MoleculeNet CSV splits into a PyTorch dataset for classification and regression tasks.
 
     It handles single-task and multi-task classification as well as regression.
@@ -108,42 +109,24 @@ class MoleculeNetDataset(Dataset):
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
         elif use_lm_head and experiment_type == "regression":
-            # CLM regression: embed the answer in the text; labels are token IDs
-            # with prompt tokens masked to -100 for teacher-forced CE training.
+            # CLM regression: embed the answer in the text; tokenize lazily
+            # per sample in __getitem__ using the reference's split-separator
+            # approach to avoid BPE tokenization boundary issues.
+            _SEPARATOR = "### Response:\n"
             df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
 
-            full_texts = [
-                f"Molecule: {s}\nQuestion: {prompt}\nAnswer: {v:.5f}{tokenizer.eos_token}"
+            self._clm_texts = [
+                f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}{v:.5f}{tokenizer.eos_token}"
                 for s, v in zip(df[smiles_column], labels)
             ]
-            prompt_texts = [
-                f"Molecule: {s}\nQuestion: {prompt}\nAnswer: "
-                for s in df[smiles_column]
-            ]
-
-            self.encodings = tokenizer(
-                full_texts,
-                truncation=True,
-                padding="max_length",
-                max_length=max_len,
-                return_tensors="pt",
-            )
-
-            clm_labels = self.encodings["input_ids"].clone()
-            for i, pt in enumerate(prompt_texts):
-                prompt_enc = tokenizer(
-                    pt, truncation=True, max_length=max_len, return_tensors="pt"
-                )
-                prompt_len = prompt_enc["input_ids"].shape[1]
-                clm_labels[i, :prompt_len] = -100
-            clm_labels[clm_labels == tokenizer.pad_token_id] = -100
-
-            self.labels = clm_labels
+            self._clm_separator = _SEPARATOR
+            self._tokenizer = tokenizer
+            self._max_len = max_len
             self.label_values = torch.tensor(labels, dtype=torch.float32)
             self.label_mask = None
             self.num_samples = len(df)
-            return  # encodings already set above; skip the block below
+            return  # __getitem__ handles tokenization for CLM regression
 
         elif experiment_type == "regression":
             df = df.dropna(subset=task_columns).copy()
@@ -210,6 +193,41 @@ class MoleculeNetDataset(Dataset):
         >>> sample["input_ids"].shape
         torch.Size([32])
         """
+        # CLM regression: lazy per-sample tokenization (avoids BPE boundary issues)
+        if hasattr(self, "_clm_texts"):
+            text = self._clm_texts[idx]
+            enc = self._tokenizer(
+                text,
+                truncation=True,
+                padding="max_length",
+                max_length=self._max_len,
+                return_tensors="pt",
+            )
+            input_ids = enc["input_ids"].squeeze(0)
+            attention_mask = enc["attention_mask"].squeeze(0)
+            labels = input_ids.clone()
+
+            parts = text.split(self._clm_separator)
+            if len(parts) >= 2:
+                prompt_text = parts[0] + self._clm_separator
+                prompt_enc = self._tokenizer(
+                    prompt_text,
+                    truncation=True,
+                    max_length=self._max_len,
+                    return_tensors="pt",
+                )
+                prompt_len = prompt_enc["input_ids"].shape[1]
+                if prompt_len < len(labels):
+                    labels[:prompt_len] = -100
+
+            labels[labels == self._tokenizer.pad_token_id] = -100
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "label_values": self.label_values[idx],
+            }
+
         item = {
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
@@ -217,8 +235,6 @@ class MoleculeNetDataset(Dataset):
         }
         if self.label_mask is not None:
             item["label_mask"] = self.label_mask[idx]
-        if hasattr(self, "label_values"):
-            item["label_values"] = self.label_values[idx]
         return item
 
 
