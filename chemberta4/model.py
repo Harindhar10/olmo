@@ -700,7 +700,6 @@ class CausalLMRegressionHead(nn.Module):
         for i in range(input_ids.shape[0]):
             # Find where the response starts (first token not masked to -100)
             response_mask = (label_ids[i] != -100)
-            print('response_mask', response_mask)
             answer_start_idx = response_mask.int().argmax().item()
 
             if answer_start_idx == 0:
