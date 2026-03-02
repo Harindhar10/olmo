@@ -167,11 +167,21 @@ class OLMoClassifier(pl.LightningModule):
 
         if hp.use_lm_head:
             # Use AutoModelForCausalLM with LM head
+
             base = AutoModelForCausalLM.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            hp.model_name,
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+            use_cache=False,
+            low_cpu_mem_usage=True,
+            device_map=None,  # IMPORTANT
             )
+
+            # base = AutoModelForCausalLM.from_pretrained(
+            #     hp.model_name,
+            #     quantization_config=bnb_config,
+            #     device_map=device_map,
+            # )
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
                     base, use_gradient_checkpointing=True

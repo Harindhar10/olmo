@@ -151,12 +151,40 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
             "effective_batch_size": args.batch_size * args.gradient_accum * num_devices,
         })
 
-    # Trainer
+
+
+#------------------------ FSDP STRATEGY ------------------------
+    import torch
+    import pytorch_lightning as pl
+    from pytorch_lightning.strategies import FSDPStrategy
+    from torch.utils.data import Dataset, DataLoader
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+    from torch.distributed.fsdp import ShardingStrategy
+    from functools import partial
+
+    # AUTO WRAP TRANSFORMER BLOCKS
+    auto_wrap_policy = partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={
+            type(model.model.model.layers[0])  # wrap each transformer block
+        },
+    )
+
+    fsdp_strategy = FSDPStrategy(
+        sharding_strategy=ShardingStrategy.FULL_SHARD,  # Stage 3
+        auto_wrap_policy=auto_wrap_policy,
+        activation_checkpointing_policy=auto_wrap_policy,
+        cpu_offload=False,
+        use_orig_params=True,
+        sync_module_states=True,
+    )
+
     trainer = pl.Trainer(
         max_epochs=args.epochs,
         accelerator="gpu",
-        devices=-1,
-        strategy="ddp",
+        devices=torch.cuda.device_count(),
+        strategy=fsdp_strategy,
         precision="16-mixed",
         gradient_clip_val=args.max_grad_norm,
         accumulate_grad_batches=args.gradient_accum,
@@ -167,6 +195,23 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         enable_progress_bar=True,
         enable_model_summary=True,
     )
+
+    # # Trainer
+    # trainer = pl.Trainer(
+    #     max_epochs=args.epochs,
+    #     accelerator="gpu",
+    #     devices=-1,
+    #     strategy="ddp",
+    #     precision="16-mixed",
+    #     gradient_clip_val=args.max_grad_norm,
+    #     accumulate_grad_batches=args.gradient_accum,
+    #     callbacks=callbacks,
+    #     logger=True,
+    #     log_every_n_steps=10,
+    #     deterministic=True,
+    #     enable_progress_bar=True,
+    #     enable_model_summary=True,
+    # )
 
     # Train
     log0("Starting training...")
