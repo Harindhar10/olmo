@@ -22,19 +22,10 @@ from chemberta4.model import (
 # ---------------------------------------------------------------------------
 
 
-class DummyBackboneREG(nn.Module):
-    """Fake OLMo backbone for RegressionHead tests.
+class DummyBackboneRegression(nn.Module):
+    """Minimal backbone stub for RegressionHead tests.
 
-    Replaces: Same real OLMo transformer as DummyBackboneCLF, but with a
-        different output format because RegressionHead expects a different
-        attribute.
-    What the head expects: RegressionHead does NOT pass ``output_hidden_states=True``.
-        Instead it reads ``.last_hidden_state`` directly — a single tensor
-        rather than a list of per-layer tensors. It also reads
-        ``config.hidden_size`` to size the regressor layer.
-    How it works: Same nn.Embedding approach as DummyBackboneCLF, but the
-        output is wrapped with ``last_hidden_state=`` instead of
-        ``hidden_states=[...]``.
+    Replaces: The real OLMo transformer (too large for unit tests).
     """
 
     def __init__(self, hidden_size: int = 16):
@@ -42,27 +33,17 @@ class DummyBackboneREG(nn.Module):
         self.config = SimpleNamespace(hidden_size=hidden_size)
         self.embed = nn.Embedding(256, hidden_size)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> SimpleNamespace:
         h = self.embed(input_ids)
         return SimpleNamespace(last_hidden_state=h)
 
 
 class DummyCausalLM(nn.Module):
-    """Fake causal language model for CausalLMRegressionHead tests.
+    """Minimal causal LM stub for CausalLMRegressionHead tests.
 
-    Replaces: A full AutoModelForCausalLM (e.g. OLMo-7B) that supports
-        both training with labels and autoregressive generation.
-    What the head expects — training: ``forward(input_ids, attention_mask, labels)``
-        must return ``.logits`` and ``.loss``. Positions where
-        ``labels == -100`` (the prompt) are excluded from the loss.
-    What the head expects — inference: ``generate(input_ids, attention_mask, **kwargs)``
-        must return token IDs containing the prompt followed by newly
-        generated tokens. These are then decoded by the tokenizer and
-        parsed for a float value.
-    How it works: forward() uses nn.Embedding -> nn.Linear for logits
-        and computes CrossEntropyLoss on non-masked positions. generate()
-        simply appends 5 zero-tokens to the input — DummyTokenizerForReg
-        will decode them to "3.14" regardless.
+    Replaces: A full AutoModelForCausalLM (too large for unit tests).
     """
 
     VOCAB_SIZE = 256
@@ -72,7 +53,12 @@ class DummyCausalLM(nn.Module):
         self.embed = nn.Embedding(self.VOCAB_SIZE, hidden_size)
         self.lm_head = nn.Linear(hidden_size, self.VOCAB_SIZE)
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: torch.Tensor | None = None,
+    ) -> SimpleNamespace:
         h = self.embed(input_ids)
         logits = self.lm_head(h)
         loss = None
@@ -82,7 +68,9 @@ class DummyCausalLM(nn.Module):
                 loss = nn.CrossEntropyLoss()(logits[mask], labels[mask])
         return SimpleNamespace(logits=logits, loss=loss)
 
-    def generate(self, input_ids, attention_mask, **kwargs):
+    def generate(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
         """Append a few dummy token ids so generated_ids slice is non-empty.
 
         Appending allows it to resemble a real generation output and lets
@@ -96,26 +84,16 @@ class DummyCausalLM(nn.Module):
 
 
 class DummyTokenizerForReg:
-    """Fake tokenizer for CausalLMRegressionHead tests.
+    """Minimal tokenizer stub for CausalLMRegressionHead tests.
 
-    Replaces: A real HuggingFace tokenizer (e.g. the OLMo tokenizer
-        loaded by the ``load_tokenizer`` fixture in conftest.py).
-    Why not use load_tokenizer: generate_and_parse decodes the generated
-        token IDs back to text and parses the first float with a regex.
-        DummyCausalLM.generate() produces dummy zero-tokens — the real
-        tokenizer would decode those to meaningless text with no number,
-        so the regex would never match and every test would get NaN.
-    What the head expects: generate_and_parse reads ``eos_token_id`` (passed to
-        model.generate as the stop/pad token) and calls
-        ``decode(token_ids, skip_special_tokens=True)`` on the output.
-    How it works: Always returns the string "3.14" from decode(),
-        giving the regex a predictable float to extract.
+    Replaces: The real HuggingFace tokenizer (would decode dummy tokens
+        to meaningless text instead of a parseable number).
     """
 
     eos_token = "<eos>"
     eos_token_id = 0
 
-    def decode(self, ids, skip_special_tokens=True):
+    def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
         return "3.14"
 
 
@@ -135,7 +113,7 @@ class TestRegressionHead:
 
     B, S = 3, 8
 
-    def _input(self):
+    def _input(self) -> tuple[torch.Tensor, torch.Tensor]:
         ids = torch.zeros(self.B, self.S, dtype=torch.long)
         mask = torch.ones(self.B, self.S, dtype=torch.long)
         return ids, mask
@@ -149,7 +127,7 @@ class TestRegressionHead:
         must be non-negative (RMSE is always >= 0) and finite to allow
         stable training.
         """
-        head = RegressionHead(DummyBackboneREG())
+        head = RegressionHead(DummyBackboneRegression())
         ids, mask = self._input()
 
         # Inference path
@@ -176,7 +154,7 @@ class TestRegressionHead:
         were missing, training could produce NaN gradients on easy
         samples.
         """
-        head = RegressionHead(DummyBackboneREG())
+        head = RegressionHead(DummyBackboneRegression())
 
         with torch.no_grad():
             head.regressor.weight.zero_()
