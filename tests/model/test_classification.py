@@ -23,18 +23,10 @@ from chemberta4.model import (
 # ---------------------------------------------------------------------------
 
 
-class DummyBackboneCLF(nn.Module):
-    """Fake OLMo backbone for ClassificationHead tests.
+class DummyBackboneClassification(nn.Module):
+    """Minimal backbone stub for ClassificationHead tests.
 
-    Replaces: The real OLMo transformer with LoRA adapters — a billion-
-        parameter model that is too large and slow to load in unit tests.
-    What the head expects: ClassificationHead calls the backbone with
-        ``output_hidden_states=True`` and reads ``.hidden_states[-1]``
-        (the last layer's output). It also reads ``config.hidden_size``
-        to know how wide the classifier layer should be.
-    How it works: A single nn.Embedding turns token IDs into vectors.
-        The output is wrapped in a SimpleNamespace with a one-element
-        ``hidden_states`` list so ``[-1]`` returns the embeddings.
+    Replaces: The real OLMo transformer (too large for unit tests).
     """
 
     def __init__(self, hidden_size: int = 16):
@@ -42,24 +34,20 @@ class DummyBackboneCLF(nn.Module):
         self.config = SimpleNamespace(hidden_size=hidden_size)
         self.embed = nn.Embedding(256, hidden_size)
 
-    def forward(self, input_ids, attention_mask, output_hidden_states=False):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        output_hidden_states: bool = False,
+    ) -> SimpleNamespace:
         h = self.embed(input_ids)
         return SimpleNamespace(hidden_states=[h])
 
 
 class DummyLM(nn.Module):
-    """Fake causal language model for CausalLMClassificationHead tests.
+    """Minimal causal LM stub for CausalLMClassificationHead tests.
 
-    Replaces: A full AutoModelForCausalLM (e.g. OLMo-7B). The real model
-        has a vocabulary of ~50k tokens; this stub uses 256 to keep memory
-        low while still covering the Yes/No token IDs (89 and 78).
-    What the head expects: CausalLMClassificationHead calls the model with
-        ``(input_ids, attention_mask)`` and reads ``.logits`` of shape
-        ``[batch, seq_len, vocab_size]``. It then slices out the Yes and
-        No token positions from the last-token logits. No
-        ``config.hidden_size`` is needed — only the logits matter.
-    How it works: nn.Embedding -> nn.Linear produces a
-        ``[batch, seq_len, 256]`` logits tensor.
+    Replaces: A full AutoModelForCausalLM (too large for unit tests).
     """
 
     VOCAB_SIZE = 256
@@ -69,28 +57,21 @@ class DummyLM(nn.Module):
         self.embed = nn.Embedding(self.VOCAB_SIZE, hidden_size)
         self.lm_head = nn.Linear(hidden_size, self.VOCAB_SIZE)
 
-    def forward(self, input_ids, attention_mask):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
+    ) -> SimpleNamespace:
         h = self.embed(input_ids)
         return SimpleNamespace(logits=self.lm_head(h))
 
 
 class DummyTokenizerForLM:
-    """Fake tokenizer for CausalLMClassificationHead tests.
+    """Minimal tokenizer stub for CausalLMClassificationHead tests.
 
-    Replaces: A real HuggingFace tokenizer (e.g. the OLMo tokenizer
-        loaded by the ``load_tokenizer`` fixture in conftest.py).
-    Why not use load_tokenizer: The real OLMo tokenizer encodes "Yes"
-        and "No" to token IDs in the thousands (e.g. ~5765, ~2822). But
-        DummyLM only has a vocabulary of 256. Indexing token ID 5765
-        into a 256-wide logits tensor would crash with an IndexError.
-    What the head expects: CausalLMClassificationHead calls
-        ``tokenizer.encode("Yes", add_special_tokens=False)[0]`` at init
-        to get the Yes/No token IDs for slicing into logits.
-    How it works: Returns ``[ord(first_char)]`` for any input string,
-        so "Yes" -> 89, "No" -> 78 — both safely within 256.
+    Replaces: The real HuggingFace tokenizer (token IDs would exceed
+        DummyLM's small vocabulary).
     """
 
-    def encode(self, text: str, add_special_tokens: bool = True):
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
         return [ord(text[0])]
 
 
@@ -154,7 +135,7 @@ class TestClassificationHead:
 
     B, S = 2, 8
 
-    def _input(self):
+    def _input(self) -> tuple[torch.Tensor, torch.Tensor]:
         ids = torch.zeros(self.B, self.S, dtype=torch.long)
         mask = torch.ones(self.B, self.S, dtype=torch.long)
         return ids, mask
@@ -169,7 +150,7 @@ class TestClassificationHead:
         A None-loss check without labels is included to confirm the
         inference path works too.
         """
-        head = ClassificationHead(DummyBackboneCLF(), task_type="single_task")
+        head = ClassificationHead(DummyBackboneClassification(), task_type="single_task")
         ids, mask = self._input()
 
         # Inference (no labels) -> loss should be None
@@ -195,7 +176,7 @@ class TestClassificationHead:
         """
         n_tasks = 3
         head = ClassificationHead(
-            DummyBackboneCLF(), num_tasks=n_tasks, task_type="multi_task"
+            DummyBackboneClassification(), num_tasks=n_tasks, task_type="multi_task"
         )
         ids, mask = self._input()
         labels = torch.zeros(self.B, n_tasks, dtype=torch.float32)
@@ -220,7 +201,7 @@ class TestClassificationHead:
         """
         n_tasks = 4
         head = ClassificationHead(
-            DummyBackboneCLF(), num_tasks=n_tasks, task_type="multi_task"
+            DummyBackboneClassification(), num_tasks=n_tasks, task_type="multi_task"
         )
         ids, mask = self._input()
         labels = torch.ones(self.B, n_tasks, dtype=torch.float32)
@@ -253,7 +234,7 @@ class TestCausalLMClassificationHead:
 
     B, S = 2, 8
 
-    def _input(self):
+    def _input(self) -> tuple[torch.Tensor, torch.Tensor]:
         ids = torch.zeros(self.B, self.S, dtype=torch.long)
         mask = torch.ones(self.B, self.S, dtype=torch.long)
         return ids, mask
