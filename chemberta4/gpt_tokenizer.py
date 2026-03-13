@@ -53,8 +53,9 @@ class GPTFeaturizer(Featurizer):
 
         encodings = []
         for i,text in enumerate(smiles_with_prompts):
-            encodings.append(self._featurize(text))
-            encodings[i]['labels'] = torch.Tensor(labels[i])
+            enc = self._featurize(text)
+            enc['labels'] = torch.tensor(labels[i], dtype=torch.float32)
+            encodings.append(enc)
         return encodings
 
 
