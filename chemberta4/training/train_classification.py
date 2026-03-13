@@ -17,6 +17,9 @@ from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoClassifier
 from chemberta4.utils import get_task, is_main_process, log0
+import deepchem as dc
+from gpt_tokenizer import GPTFeaturizer
+
 
 
 def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None:
@@ -37,43 +40,54 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
+    
+    loader = dc.data.CSVLoader(task_config.task_columns, feature_field=["smiles","y"],
+                             featurizer=GPTFeaturizer(tokenizer))
+    
+    # # Load data
+    # train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")
+    # val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
+    # test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
-    # Load data
-    train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")
-    val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
-    test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
-
-    # Create datasets
-    train_ds = MoleculeNetDataset(
-        train_df,
-        tokenizer,
-        task_config.task_columns,
-        task_config.prompt,
-        task_config.task_type,
-        task_config.experiment_type,
-        args.max_len,
-        args.use_lm_head,
-    )
-    val_ds = MoleculeNetDataset(
-        val_df,
-        tokenizer,
-        task_config.task_columns,
-        task_config.prompt,
-        task_config.task_type,
-        task_config.experiment_type,
-        args.max_len,
-        args.use_lm_head,
-    )
-    test_ds = MoleculeNetDataset(
-        test_df,
-        tokenizer,
-        task_config.task_columns,
-        task_config.prompt,
-        task_config.task_type,
-        task_config.experiment_type,
-        args.max_len,
-        args.use_lm_head,
-    )
+    train_dataset = loader.create_dataset(f"{args.data_dir}/{task_name}/train.csv")
+    val_dataset = loader.create_dataset(f"{args.data_dir}/{task_name}/valid.csv")
+    test_dataset = loader.create_dataset(f"{args.data_dir}/{task_name}/test.csv")
+    
+    train_ds = dc.data._TorchIndexDiskDataset(train_dataset)
+    val_ds = dc.data._TorchIndexDiskDataset(val_dataset)
+    test_ds = dc.data._TorchIndexDiskDataset(test_dataset)
+    
+    # # # Create datasets
+    # train_ds = MoleculeNetDataset(
+    #     train_df,
+    #     tokenizer,
+    #     task_config.task_columns,
+    #     task_config.prompt,
+    #     task_config.task_type,
+    #     task_config.experiment_type,
+    #     args.max_len,
+    #     args.use_lm_head,
+    # )
+    # val_ds = MoleculeNetDataset(
+    #     val_df,
+    #     tokenizer,
+    #     task_config.task_columns,
+    #     task_config.prompt,
+    #     task_config.task_type,
+    #     task_config.experiment_type,
+    #     args.max_len,
+    #     args.use_lm_head,
+    # )
+    # test_ds = MoleculeNetDataset(
+    #     test_df,
+    #     tokenizer,
+    #     task_config.task_columns,
+    #     task_config.prompt,
+    #     task_config.task_type,
+    #     task_config.experiment_type,
+    #     args.max_len,
+    #     args.use_lm_head,
+    # )
 
     log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
 
