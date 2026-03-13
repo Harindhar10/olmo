@@ -6,6 +6,7 @@ except ModuleNotFoundError:
     raise ImportError(
         'Transformers must be installed for BertFeaturizer to be used!')
     pass
+import torch
 
 class GPTFeaturizer(Featurizer):
     """GPT Featurizer.
