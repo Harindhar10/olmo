@@ -1,3 +1,11 @@
+from deepchem.feat import Featurizer
+from typing import List
+try:
+    from transformers import BertTokenizerFast
+except ModuleNotFoundError:
+    raise ImportError(
+        'Transformers must be installed for BertFeaturizer to be used!')
+    pass
 
 class GPTFeaturizer(Featurizer):
     """GPT Featurizer.
