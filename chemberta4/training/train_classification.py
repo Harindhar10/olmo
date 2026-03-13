@@ -19,7 +19,7 @@ from chemberta4.trainer import OLMoClassifier
 from chemberta4.utils import get_task, is_main_process, log0
 import deepchem as dc
 from chemberta4.gpt_tokenizer import GPTFeaturizer
-
+from chemberta4.deepchem_torch_dataset import _TorchIndexDiskDataset
 
 
 def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None:
@@ -53,9 +53,9 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     val_dataset = loader.create_dataset(f"{args.data_dir}/{task_name}/valid.csv")
     test_dataset = loader.create_dataset(f"{args.data_dir}/{task_name}/test.csv")
     
-    train_ds = dc.data._TorchIndexDiskDataset(train_dataset)
-    val_ds = dc.data._TorchIndexDiskDataset(val_dataset)
-    test_ds = dc.data._TorchIndexDiskDataset(test_dataset)
+    train_ds = _TorchIndexDiskDataset(train_dataset)
+    val_ds = _TorchIndexDiskDataset(val_dataset)
+    test_ds = _TorchIndexDiskDataset(test_dataset)
     
     # # # Create datasets
     # train_ds = MoleculeNetDataset(

@@ -1,13 +1,3 @@
-from deepchem.feat import Featurizer
-from typing import List
-import pandas as pd
-try:
-    from transformers import GPTNeoXTokenizerFast
-except ModuleNotFoundError:
-    raise ImportError(
-        'Transformers must be installed for GPTFeaturizer to be used!')
-    pass
-
 
 class GPTFeaturizer(Featurizer):
     """GPT Featurizer.
@@ -59,7 +49,7 @@ class GPTFeaturizer(Featurizer):
         encodings = []
         for i,text in enumerate(smiles_with_prompts):
             encodings.append(self._featurize(text))
-
+            encodings[i]['labels'] = torch.Tensor(labels[i])
         return encodings
 
 
