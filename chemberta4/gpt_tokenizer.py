@@ -1,4 +1,4 @@
-# from deepchem.feat import Featurizer
+from deepchem.feat import Featurizer
 from typing import List
 import pandas as pd
 try:
