@@ -25,13 +25,9 @@ class GPTFeaturizer(Featurizer):
 
     """
 
-    def __init__(self, tokenizer: GPTNeoXTokenizerFast):
-        if not isinstance(tokenizer, GPTNeoXTokenizerFast):
-            raise TypeError(
-                f"""`tokenizer` must be a constructed `GPTNeoXTokenizerFast`
-                object, not {type(tokenizer)}""")
-        else:
-            self.tokenizer = tokenizer
+    def __init__(self, tokenizer):
+
+        self.tokenizer = tokenizer
 
     def featurize(self, datapoints: str, **kwargs) -> List[List[int]]:
         """
