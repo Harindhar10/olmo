@@ -41,7 +41,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
-    loader = dc.data.CSVLoader(task_config.task_columns, feature_field=["smiles","y"],
+    loader = dc.data.CSVLoader(task_config.task_columns, feature_field=["smiles",task_config.task_columns[0]],
                              featurizer=GPTFeaturizer(tokenizer))
     
     # # Load data
