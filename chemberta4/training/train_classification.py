@@ -18,7 +18,7 @@ from chemberta4.data import MoleculeNetDataset
 from chemberta4.trainer import OLMoClassifier
 from chemberta4.utils import get_task, is_main_process, log0
 import deepchem as dc
-from gpt_tokenizer import GPTFeaturizer
+from chemberta4.gpt_tokenizer import GPTFeaturizer
 
 
 
