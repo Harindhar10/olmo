@@ -54,7 +54,7 @@ class GPTFeaturizer(Featurizer):
         encodings = []
         for i,text in enumerate(smiles_with_prompts):
             enc = self._featurize(text)
-            enc['labels'] = torch.tensor(labels[i], dtype=torch.float32)
+            enc['labels'] = torch.tensor(labels[i], dtype=torch.long) # to make it work with bcewithlogitsloss, which expects labels to be of type long
             encodings.append(enc)
         return encodings
 
