@@ -225,7 +225,6 @@ class OLMoClassifier(pl.LightningModule):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         labels: Optional[torch.Tensor] = None,
-        label_mask: Optional[torch.Tensor] = None,
     ) -> Any:
         """Run the forward pass through the classification model.
 
@@ -237,15 +236,13 @@ class OLMoClassifier(pl.LightningModule):
             Attention mask of shape '(batch, seq_len)'.
         labels : torch.Tensor, optional
             Ground-truth labels for loss computation.
-        label_mask : torch.Tensor, optional
-            Boolean mask for valid labels (multilabel/multitask tasks).
 
         Returns
         -------
         tuple
             '(logits, loss)' returned by the classification head.
         """
-        return self.model(input_ids, attention_mask, labels, label_mask)
+        return self.model(input_ids, attention_mask, labels)
 
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
         """Compute loss and update metrics for a single batch.
@@ -253,8 +250,7 @@ class OLMoClassifier(pl.LightningModule):
         Parameters
         ----------
         batch : Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels', and
-            optionally 'label_mask'.
+            Dict with 'input_ids', 'attention_mask', and 'labels'.
         stage : str
             One of 'train', 'val', or 'test'.
 
@@ -263,12 +259,10 @@ class OLMoClassifier(pl.LightningModule):
         torch.Tensor
             Scalar loss tensor.
         """
-        label_mask = batch.get("label_mask", None)
         logits, loss = self(
             batch["input_ids"],
             batch["attention_mask"],
             batch["labels"],
-            label_mask,
         )
 
         # Get metrics for this stage
@@ -285,16 +279,9 @@ class OLMoClassifier(pl.LightningModule):
         else:
             probs = torch.sigmoid(logits)
             preds = (probs > 0.5).int()
-            if label_mask is not None:
-                valid = label_mask.any(dim=1)
-                if valid.any():
-                    acc_metric(preds[valid], batch["labels"][valid].int())
-                    if auroc_metric is not None:
-                        auroc_metric(probs[valid], batch["labels"][valid].int())
-            else:
-                acc_metric(preds, batch["labels"].int())
-                if auroc_metric is not None:
-                    auroc_metric(probs, batch["labels"].int())
+            acc_metric(preds, batch["labels"].int())
+            if auroc_metric is not None:
+                auroc_metric(probs, batch["labels"].int())
 
         # Log metrics
         self.log(f"{stage}/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)

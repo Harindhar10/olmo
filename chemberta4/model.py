@@ -77,8 +77,7 @@ class ClassificationHead(nn.Module):
     a single linear layer on top of the last-token hidden state. For
     'single_task' the output has 2 logits (binary) and is trained with
     CrossEntropyLoss; for 'multi_task' there are 'num_tasks' sigmoid outputs
-    trained with BCEWithLogitsLoss. Missing labels in multi-task datasets are
-    excluded from the loss via 'label_mask'.
+    trained with BCEWithLogitsLoss.
 
     Examples
     --------
@@ -139,7 +138,6 @@ class ClassificationHead(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         labels: Optional[torch.Tensor] = None,
-        label_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Run the forward pass for classification.
 
@@ -151,8 +149,6 @@ class ClassificationHead(nn.Module):
             Attention mask of shape '[batch, seq_len]'.
         labels : torch.Tensor, optional
             Labels of shape '[batch]' for single_task or '[batch, num_tasks]' for multi_task.
-        label_mask : torch.Tensor, optional
-            Boolean mask of shape '[batch, num_tasks]' for missing labels (multi_task).
 
         Returns
         -------
@@ -195,7 +191,7 @@ class ClassificationHead(nn.Module):
 
         loss = None
         if labels is not None:
-            loss = self._compute_loss(logits, labels, label_mask)
+            loss = self._compute_loss(logits, labels)
 
         return logits, loss
 
@@ -203,7 +199,6 @@ class ClassificationHead(nn.Module):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
-        label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute the task-appropriate classification loss.
 
@@ -213,8 +208,6 @@ class ClassificationHead(nn.Module):
             Model output logits.
         labels : torch.Tensor
             Ground-truth labels.
-        label_mask : torch.Tensor, optional
-            Boolean mask for valid labels (multi_task only).
 
         Returns
         -------
@@ -224,13 +217,6 @@ class ClassificationHead(nn.Module):
         if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
-            # multi_task: use BCE with logits
-            if label_mask is not None:
-                # Masked loss for missing labels
-                loss_fct = nn.BCEWithLogitsLoss(reduction="none")
-                loss = loss_fct(logits, labels)
-                # Returns mean BCE loss over only valid (non-missing) labels
-                return (loss * label_mask.float()).sum() / label_mask.float().sum()
             return nn.BCEWithLogitsLoss()(logits, labels)
 
 
@@ -314,7 +300,6 @@ class CausalLMClassificationHead(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         labels: Optional[torch.Tensor] = None,
-        label_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Run the forward pass using LM head for Yes/No prediction.
 
@@ -326,8 +311,6 @@ class CausalLMClassificationHead(nn.Module):
             Attention mask of shape '[batch, seq_len]'.
         labels : torch.Tensor, optional
             Labels of shape '[batch]' for single_task or '[batch, num_tasks]' for multi_task.
-        label_mask : torch.Tensor, optional
-            Boolean mask of shape '[batch, num_tasks]' for missing labels.
 
         Returns
         -------
@@ -388,7 +371,7 @@ class CausalLMClassificationHead(nn.Module):
 
         loss = None
         if labels is not None:
-            loss = self._compute_loss(logits, labels, label_mask)
+            loss = self._compute_loss(logits, labels)
 
         return logits, loss
 
@@ -396,7 +379,6 @@ class CausalLMClassificationHead(nn.Module):
         self,
         logits: torch.Tensor,
         labels: torch.Tensor,
-        label_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute the task-appropriate classification loss.
 
@@ -406,8 +388,6 @@ class CausalLMClassificationHead(nn.Module):
             Model output logits.
         labels : torch.Tensor
             Ground-truth labels.
-        label_mask : torch.Tensor, optional
-            Boolean mask for valid labels (multi_task only).
 
         Returns
         -------
@@ -417,10 +397,6 @@ class CausalLMClassificationHead(nn.Module):
         if self.task_type == "single_task":
             return nn.CrossEntropyLoss()(logits, labels)
         else:
-            if label_mask is not None:
-                loss_fct = nn.BCEWithLogitsLoss(reduction="none")
-                loss = loss_fct(logits, labels)
-                return (loss * label_mask.float()).sum() / label_mask.float().sum()
             return nn.BCEWithLogitsLoss()(logits, labels)
 
 

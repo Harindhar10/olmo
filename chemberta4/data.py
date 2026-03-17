@@ -23,18 +23,15 @@ class MoleculeNetDataset(Dataset):
     Label processing depends on the combination of 'task_type' and
     'experiment_type':
 
-    * **single_task classification** — rows with missing labels are dropped;
-      labels are stored as integers for cross-entropy loss.
-    * **multi_task classification** — all rows are kept; a boolean mask tracks
-      which labels are present so that missing values (NaN) are excluded from
-      the loss.
+    * **single_task classification** — labels are stored as integers for
+      cross-entropy loss.
+    * **multi_task classification** — labels are stored as floats for BCE loss.
     * **Causal LM regression** ('use_lm_head=True', 'experiment_type="regression"')
       — the target number is embedded directly into the prompt text (e.g.
       ``"### Response:\\n3.14159"``). Tokenization happens per-sample in
       ``__getitem__`` and prompt tokens are masked with -100 so that only the
       answer portion contributes to the cross-entropy loss.
-    * **Standard regression** — rows with missing labels are dropped; labels
-      are stored as floats for RMSE loss.
+    * **Standard regression** — labels are stored as floats for RMSE loss.
 
     When 'use_lm_head=True' for classification, the prompt ends with
     ``"Answer:"`` so the language model head can score Yes/No token
@@ -105,19 +102,12 @@ class MoleculeNetDataset(Dataset):
 
         # Process labels based on task type
         if task_type == "single_task":
-            df = df.dropna(subset=task_columns).copy()
             self.labels = torch.tensor(
                 df[task_columns[0]].values.astype(int), dtype=torch.long
             )
-            self.label_mask = None
 
         elif task_type == "multi_task":
-            df = df.copy()
             labels_array = df[task_columns].values.astype(np.float32)
-            # Mask for missing labels (NaN values)
-            self.label_mask = torch.tensor(~np.isnan(labels_array), dtype=torch.bool)
-            # Replace NaN with 0 for computation
-            labels_array = np.nan_to_num(labels_array, nan=0.0)
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
         elif use_lm_head and experiment_type == "regression":
@@ -125,7 +115,6 @@ class MoleculeNetDataset(Dataset):
             # per sample in __getitem__ using the reference's split-separator
             # approach to avoid BPE tokenization boundary issues.
             _SEPARATOR = "### Response:\n"
-            df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
 
             self._clm_texts = [
@@ -136,15 +125,12 @@ class MoleculeNetDataset(Dataset):
             self._tokenizer = tokenizer
             self._max_len = max_len
             self.label_values = torch.tensor(labels, dtype=torch.float32)
-            self.label_mask = None
             self.num_samples = len(df)
             return  # __getitem__ handles tokenization for CLM regression
 
         elif experiment_type == "regression":
-            df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
             self.labels = torch.tensor(labels, dtype=torch.float32)
-            self.label_mask = None
 
         else:
             raise ValueError(f"Unknown experiment_type: {experiment_type}")
@@ -180,8 +166,7 @@ class MoleculeNetDataset(Dataset):
 
         1. Standard encoder-style training (classification or regression)
         Returns pre-tokenized inputs stored in ``self.encodings`` along with
-        their corresponding labels. Optionally includes a ``label_mask`` for
-        multi-task setups with missing labels.
+        their corresponding labels.
 
         2. Causal language modeling (CLM) regression mode
         Triggered when ``self.use_lm_head`` is True and
@@ -205,7 +190,7 @@ class MoleculeNetDataset(Dataset):
         -------
         Dict[str, torch.Tensor]
             Dict with 'input_ids', 'attention_mask', 'labels', and
-            optionally 'label_mask' (for multi_task tasks).
+            For multi_task, 'labels' has shape '[batch, num_tasks]'.
 
         Examples
         --------
@@ -260,14 +245,11 @@ class MoleculeNetDataset(Dataset):
                 "label_values": self.label_values[idx],
             }
 
-        item = {
+        return {
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
             "labels": self.labels[idx],
         }
-        if self.label_mask is not None:
-            item["label_mask"] = self.label_mask[idx]
-        return item
 
 
 class PretrainingDataset(Dataset):
