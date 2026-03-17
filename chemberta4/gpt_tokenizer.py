@@ -27,10 +27,11 @@ class GPTFeaturizer(Featurizer):
 
     """
 
-    def __init__(self, tokenizer, task_name):
+    def __init__(self, tokenizer, task_name, task_type="single_task"):
 
         self.tokenizer = tokenizer
         self.task_name = task_name
+        self.task_type = task_type
 
     def featurize(self, datapoints: str, **kwargs) -> List[List[int]]:
         """
@@ -46,17 +47,24 @@ class GPTFeaturizer(Featurizer):
         encoding: List
             List containing three lists: the `input_ids`, 'token_type_ids', and `attention_mask`.
         """
-        # datapoints is a dataframe with columns 'smiles' and label column specific to the moleculenet dataset 
+        # datapoints is a dataframe with columns: smiles + one or more label columns
+        label_cols = datapoints.columns.drop('smiles')
 
-        datapoints.columns = ['smiles','y']
         smiles = datapoints['smiles']
-        labels = datapoints['y']
         smiles_with_prompts = self.formatting_prompts_func(smiles)
 
         encodings = []
-        for i,text in enumerate(smiles_with_prompts):
+        for i, text in enumerate(smiles_with_prompts):
             enc = self._featurize(text)
-            enc['labels'] = torch.tensor(labels[i], dtype=torch.long) # to make it work with bcewithlogitsloss, which expects labels to be of type long
+            if self.task_type == "multi_task":
+                enc['labels'] = torch.tensor(
+                    datapoints.iloc[i][label_cols].values.astype(float),
+                    dtype=torch.float32,
+                )
+            else:
+                enc['labels'] = torch.tensor(
+                    datapoints.iloc[i][label_cols[0]], dtype=torch.long,
+                )
             encodings.append(enc)
         return encodings
 
