@@ -8,3 +8,6 @@ wandb
 outputs
 lightning_logs
 __pycache__
+code_v1.ipynb
+.gitignore
+.DS_Store
