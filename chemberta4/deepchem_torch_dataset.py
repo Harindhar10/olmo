@@ -152,10 +152,4 @@ class _TorchIndexDiskDataset(torch.utils.data.Dataset):
         w_sample = w[local_index] if w is not None else None
         ids_sample = ids[local_index] if ids is not None else None
 
-        item = {
-            "input_ids": X_sample["input_ids"][0],
-            "attention_mask": X_sample["attention_mask"][0],
-            "labels": X_sample['labels'],
-        }
-
-        return item
+        return (X_sample, y_sample, w_sample, ids_sample)
