@@ -11,10 +11,10 @@ from typing import Any, Dict, Optional
 import torch
 import pytorch_lightning as pl
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     AutoModel,
     AutoModelForCausalLM,
-    BitsAndBytesConfig,
 )
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
@@ -153,24 +153,10 @@ class OLMoClassifier(pl.LightningModule):
         self.tokenizer = AutoTokenizer.from_pretrained(hp.model_name)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Quantization config (only for qlora)
-        bnb_config = None
-        if hp.finetune_strategy == "qlora":
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-
-        device_map = 'cpu' #get_device_map(self.device)
-
         if hp.use_lm_head:
             # Use AutoModelForCausalLM with LM head
-            base = AutoModelForCausalLM.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            base = AutoModelForCausalLM.from_config(
+                AutoConfig.from_pretrained(hp.model_name),
             )
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
@@ -195,10 +181,8 @@ class OLMoClassifier(pl.LightningModule):
             )
         else:
             # Use AutoModel with classification head
-            base = AutoModel.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            base = AutoModel.from_config(
+                AutoConfig.from_pretrained(hp.model_name),
             )
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
@@ -473,28 +457,13 @@ class OLMoRegressor(pl.LightningModule):
         self.tokenizer = AutoTokenizer.from_pretrained(hp.model_name)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        bnb_config = None
-        if hp.finetune_strategy == "qlora":
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-
-        device_map = "cpu" #get_device_map(self.device)
-
         if hp.use_lm_head:
-            base = AutoModelForCausalLM.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            base = AutoModelForCausalLM.from_config(
+                AutoConfig.from_pretrained(hp.model_name),
             )
         else:
-            base = AutoModel.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            base = AutoModel.from_config(
+                AutoConfig.from_pretrained(hp.model_name),
             )
 
         if hp.finetune_strategy == "qlora":
@@ -824,19 +793,8 @@ class OLMoPretrainer(pl.LightningModule):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        bnb_config = None
-        if hp.finetune_strategy == "qlora":
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-
-        model = AutoModelForCausalLM.from_pretrained(
-            hp.model_name,
-            quantization_config=bnb_config,
-            trust_remote_code=True,
+        model = AutoModelForCausalLM.from_config(
+            AutoConfig.from_pretrained(hp.model_name),
         )
 
         model.config.use_cache = False
