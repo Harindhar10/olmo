@@ -1,5 +1,6 @@
 from deepchem.feat import Featurizer
 from typing import List
+from chemberta4.prompt_templates import PROMPT_TEMPLATES
 try:
     from transformers import BertTokenizerFast
 except ModuleNotFoundError:
@@ -26,9 +27,10 @@ class GPTFeaturizer(Featurizer):
 
     """
 
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, task_name):
 
         self.tokenizer = tokenizer
+        self.task_name = task_name
 
     def featurize(self, datapoints: str, **kwargs) -> List[List[int]]:
         """
@@ -86,19 +88,11 @@ class GPTFeaturizer(Featurizer):
     
     def formatting_prompts_func(self, examples):
 
-        bbbp_prompt = """"### Question: Does this molecule cross the 
-                            blood brain barrier?
-
-                            ### Molecule:
-                            {}
-
-                            ### Answer:
-                        """
+        prompt_template = PROMPT_TEMPLATES[self.task_name]
 
         EOS_TOKEN = self.tokenizer.eos_token  # Must add EOS_TOKEN
         texts = []
         for molecule in examples:
-            text = bbbp_prompt.format(molecule) + EOS_TOKEN
+            text = prompt_template.format(smiles=molecule) + EOS_TOKEN
             texts.append(text)
         return texts
-

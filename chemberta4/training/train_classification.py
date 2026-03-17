@@ -42,7 +42,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     tokenizer.pad_token = tokenizer.eos_token
     
     loader = dc.data.CSVLoader(task_config.task_columns, feature_field=["smiles",task_config.task_columns[0]],
-                             featurizer=GPTFeaturizer(tokenizer))
+                             featurizer=GPTFeaturizer(tokenizer, task_name))
     
     # # Load data
     # train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")
