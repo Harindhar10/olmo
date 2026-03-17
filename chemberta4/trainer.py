@@ -19,8 +19,6 @@ from transformers import (
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
-import numpy as np
-from typing import Tuple, Dict
 
 from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
 from chemberta4.utils import get_device_map
@@ -224,7 +222,9 @@ class OLMoClassifier(pl.LightningModule):
 
     def forward(
         self,
-        inputs: Tuple[Dict, np.ndarray, np.ndarray, np.ndarray],
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
     ) -> Any:
         """Run the forward pass through the classification model.
 
@@ -242,21 +242,15 @@ class OLMoClassifier(pl.LightningModule):
         tuple
             '(logits, loss)' returned by the classification head.
         """
-        item = {
-            "input_ids": inputs[0]["input_ids"][0],
-            "attention_mask": inputs[0]["attention_mask"][0],
-            "labels": inputs[0]['labels'],
-        }
+        return self.model(input_ids, attention_mask, labels)
 
-        return self.model(item['input_ids'], item['attention_mask'], item['labels'])
-
-    def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+    def _shared_step(self, batch, stage: str) -> torch.Tensor:
         """Compute loss and update metrics for a single batch.
 
         Parameters
         ----------
-        batch : Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', and 'labels'.
+        batch : tuple
+            DeepChem 4-tuple (X_dict, y, w, ids) from the DataLoader.
         stage : str
             One of 'train', 'val', or 'test'.
 
@@ -265,11 +259,12 @@ class OLMoClassifier(pl.LightningModule):
         torch.Tensor
             Scalar loss tensor.
         """
-        logits, loss = self(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["labels"],
-        )
+        x_dict, _, _, _ = batch
+        input_ids = x_dict["input_ids"].squeeze(1)            # (B,1,seq) -> (B,seq)
+        attention_mask = x_dict["attention_mask"].squeeze(1)   # (B,1,seq) -> (B,seq)
+        labels = x_dict["labels"]                              # (B,)
+
+        logits, loss = self(input_ids, attention_mask, labels)
 
         # Get metrics for this stage
         acc_metric = getattr(self, f"{stage}_acc")
@@ -279,15 +274,15 @@ class OLMoClassifier(pl.LightningModule):
         if self.hparams.task_type == "single_task":
             probs = torch.softmax(logits, dim=-1)[:, 1]
             preds = logits.argmax(dim=-1)
-            acc_metric(preds, batch["labels"])
+            acc_metric(preds, labels)
             if auroc_metric is not None:
-                auroc_metric(probs, batch["labels"])
+                auroc_metric(probs, labels)
         else:
             probs = torch.sigmoid(logits)
             preds = (probs > 0.5).int()
-            acc_metric(preds, batch["labels"].int())
+            acc_metric(preds, labels.int())
             if auroc_metric is not None:
-                auroc_metric(probs, batch["labels"].int())
+                auroc_metric(probs, labels.int())
 
         # Log metrics
         self.log(f"{stage}/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
@@ -299,7 +294,7 @@ class OLMoClassifier(pl.LightningModule):
 
         return loss
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
 
         Parameters
@@ -316,7 +311,7 @@ class OLMoClassifier(pl.LightningModule):
         """
         return self._shared_step(batch, "train")
 
-    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step.
 
         Parameters
@@ -333,7 +328,7 @@ class OLMoClassifier(pl.LightningModule):
         """
         return self._shared_step(batch, "val")
 
-    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def test_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single test step.
 
         Parameters
@@ -526,7 +521,9 @@ class OLMoRegressor(pl.LightningModule):
 
     def forward(
         self,
-        inputs: Tuple[Dict, np.ndarray, np.ndarray, np.ndarray],
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
     ) -> Any:
         """Run the forward pass through the regression model.
 
@@ -544,22 +541,16 @@ class OLMoRegressor(pl.LightningModule):
         tuple
             '(predictions, loss)' returned by the regression head.
         """
-        item = {
-            "input_ids": inputs[0]["input_ids"][0],
-            "attention_mask": inputs[0]["attention_mask"][0],
-            "labels": inputs[0]['labels'],
-        }
-
-        return self.model(item['input_ids'], item['attention_mask'], item['labels'])
+        return self.model(input_ids, attention_mask, labels)
 
 
-    def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+    def _shared_step(self, batch, stage: str) -> torch.Tensor:
         """Compute loss and log RMSE/MAE for a single batch.
 
         Parameters
         ----------
-        batch : Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', and 'labels'.
+        batch : tuple
+            DeepChem 4-tuple (X_dict, y, w, ids) from the DataLoader.
         stage : str
             One of 'train', 'val', or 'test'.
 
@@ -568,17 +559,18 @@ class OLMoRegressor(pl.LightningModule):
         torch.Tensor
             Scalar loss tensor.
         """
+        x_dict, _, _, _ = batch
+        input_ids = x_dict["input_ids"].squeeze(1)            # (B,1,seq) -> (B,seq)
+        attention_mask = x_dict["attention_mask"].squeeze(1)   # (B,1,seq) -> (B,seq)
+        labels = x_dict["labels"]                              # (B,)
+
         if self.hparams.use_lm_head:
-            return self._clm_step(batch, stage)
+            return self._clm_step(input_ids, attention_mask, labels, stage)
 
-        preds, loss = self(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["labels"],
-        )
+        preds, loss = self(input_ids, attention_mask, labels)
 
-        rmse = torch.sqrt(torch.nn.functional.mse_loss(preds, batch["labels"]) + 1e-6)
-        mae = torch.mean(torch.abs(preds - batch["labels"]))
+        rmse = torch.sqrt(torch.nn.functional.mse_loss(preds, labels) + 1e-6)
+        mae = torch.mean(torch.abs(preds - labels))
 
         self.log(f"{stage}/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log(f"{stage}/rmse", rmse, on_epoch=True, prog_bar=True, sync_dist=True)
@@ -586,7 +578,13 @@ class OLMoRegressor(pl.LightningModule):
 
         return loss
 
-    def _clm_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
+    def _clm_step(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: torch.Tensor,
+        stage: str,
+    ) -> torch.Tensor:
         """Handle a batch for the CausalLMRegressionHead.
 
         During training, computes and logs cross-entropy loss.
@@ -595,9 +593,12 @@ class OLMoRegressor(pl.LightningModule):
 
         Parameters
         ----------
-        batch : Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels' (token IDs with
-            -100 masking), and 'label_values' (raw float targets, eval only).
+        input_ids : torch.Tensor
+            Token IDs of shape '(batch, seq_len)'.
+        attention_mask : torch.Tensor
+            Attention mask of shape '(batch, seq_len)'.
+        labels : torch.Tensor
+            Ground-truth labels (raw float targets).
         stage : str
             One of 'train', 'val', or 'test'.
 
@@ -607,21 +608,15 @@ class OLMoRegressor(pl.LightningModule):
             Cross-entropy loss for training, RMSE for validation/test.
         """
         if stage == "train":
-            _, loss = self(
-                batch["input_ids"],
-                batch["attention_mask"],
-                batch["labels"],
-            )
+            _, loss = self(input_ids, attention_mask, labels)
             self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
             return loss
 
         # Evaluation: generate text and parse predicted numbers
         parsed_preds = self.model.generate_and_parse(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["labels"],
+            input_ids, attention_mask, labels,
         )
-        true_vals = batch["label_values"].to(parsed_preds.device)
+        true_vals = labels.float().to(parsed_preds.device)
 
         valid = ~(torch.isnan(parsed_preds) | torch.isnan(true_vals))
         if valid.any():
@@ -638,7 +633,7 @@ class OLMoRegressor(pl.LightningModule):
 
         return rmse
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
 
         Parameters
@@ -655,7 +650,7 @@ class OLMoRegressor(pl.LightningModule):
         """
         return self._shared_step(batch, "train")
 
-    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step.
 
         Parameters
@@ -672,7 +667,7 @@ class OLMoRegressor(pl.LightningModule):
         """
         return self._shared_step(batch, "val")
 
-    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def test_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Execute a single test step.
 
         Parameters
@@ -895,7 +890,7 @@ class OLMoPretrainer(pl.LightningModule):
             labels=labels,
         )
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Compute causal LM loss for a training batch.
 
         Parameters
@@ -919,7 +914,7 @@ class OLMoPretrainer(pl.LightningModule):
         self.log("train/loss", loss, prog_bar=True, on_step=True, sync_dist=True)
         return loss
 
-    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch, batch_idx: int) -> torch.Tensor:
         """Compute loss and perplexity for a validation batch.
 
         Parameters
