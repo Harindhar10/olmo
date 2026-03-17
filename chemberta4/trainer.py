@@ -19,6 +19,8 @@ from transformers import (
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+import numpy as np
+from typing import Tuple, Dict
 
 from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
 from chemberta4.utils import get_device_map
@@ -222,9 +224,7 @@ class OLMoClassifier(pl.LightningModule):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        labels: Optional[torch.Tensor] = None,
+        inputs: Tuple[Dict, np.ndarray, np.ndarray, np.ndarray],
     ) -> Any:
         """Run the forward pass through the classification model.
 
@@ -242,7 +242,13 @@ class OLMoClassifier(pl.LightningModule):
         tuple
             '(logits, loss)' returned by the classification head.
         """
-        return self.model(input_ids, attention_mask, labels)
+        item = {
+            "input_ids": inputs[0]["input_ids"][0],
+            "attention_mask": inputs[0]["attention_mask"][0],
+            "labels": inputs[0]['labels'],
+        }
+
+        return self.model(item['input_ids'], item['attention_mask'], item['labels'])
 
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
         """Compute loss and update metrics for a single batch.
@@ -520,9 +526,7 @@ class OLMoRegressor(pl.LightningModule):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        labels: Optional[torch.Tensor] = None,
+        inputs: Tuple[Dict, np.ndarray, np.ndarray, np.ndarray],
     ) -> Any:
         """Run the forward pass through the regression model.
 
@@ -540,7 +544,14 @@ class OLMoRegressor(pl.LightningModule):
         tuple
             '(predictions, loss)' returned by the regression head.
         """
-        return self.model(input_ids, attention_mask, labels)
+        item = {
+            "input_ids": inputs[0]["input_ids"][0],
+            "attention_mask": inputs[0]["attention_mask"][0],
+            "labels": inputs[0]['labels'],
+        }
+
+        return self.model(item['input_ids'], item['attention_mask'], item['labels'])
+
 
     def _shared_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
         """Compute loss and log RMSE/MAE for a single batch.
