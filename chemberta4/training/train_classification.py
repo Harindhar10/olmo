@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 
 from chemberta4.callbacks import WandbCallback
 from chemberta4.data import MoleculeNetDataset
-from chemberta4.trainer import OLMoClassifier
+from chemberta4.trainer import OLMoClassifier, DummyOLMoClassifier
 from chemberta4.utils import get_task, is_main_process, log0
 import deepchem as dc
 from chemberta4.gpt_tokenizer import GPTFeaturizer
@@ -106,7 +106,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
 
     # Model
-    model = OLMoClassifier(
+    model = DummyOLMoClassifier(
         model_name=args.model_name,
         num_tasks=len(task_config.task_columns),
         task_type=task_config.task_type,

@@ -20,7 +20,7 @@ from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_tr
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
-from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
+from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead, DummyMLPClassificationHead
 from chemberta4.utils import get_device_map
 
 
@@ -379,6 +379,56 @@ class OLMoClassifier(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
+
+
+class DummyOLMoClassifier(OLMoClassifier):
+    """Drop-in replacement for OLMoClassifier using a simple MLP instead of a HuggingFace model.
+
+    Accepts the same constructor arguments and batch format. HuggingFace/LoRA
+    parameters are accepted but ignored. Useful for fast pipeline testing.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "allenai/OLMo-7B-hf",
+        num_tasks: int = 1,
+        task_type: str = "single_task",
+        use_lm_head: bool = False,
+        finetune_strategy: str = "qlora",
+        lr: float = 2e-4,
+        weight_decay: float = 0.01,
+        warmup_ratio: float = 0.1,
+        lora_r: int = 32,
+        lora_alpha: int = 64,
+        lora_dropout: float = 0.05,
+        vocab_size: int = 50304,
+        hidden_dim: int = 256,
+    ):
+        super().__init__(
+            model_name=model_name,
+            num_tasks=num_tasks,
+            task_type=task_type,
+            use_lm_head=use_lm_head,
+            finetune_strategy=finetune_strategy,
+            lr=lr,
+            weight_decay=weight_decay,
+            warmup_ratio=warmup_ratio,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
+        self.save_hyperparameters()
+
+    def configure_model(self) -> None:
+        if self.model is not None:
+            return
+        hp = self.hparams
+        self.model = DummyMLPClassificationHead(
+            vocab_size=hp.vocab_size,
+            hidden_dim=hp.hidden_dim,
+            num_tasks=hp.num_tasks,
+            task_type=hp.task_type,
+        )
 
 
 class OLMoRegressor(pl.LightningModule):

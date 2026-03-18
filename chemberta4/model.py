@@ -400,6 +400,58 @@ class CausalLMClassificationHead(nn.Module):
             return nn.BCEWithLogitsLoss()(logits, labels)
 
 
+class DummyMLPClassificationHead(nn.Module):
+    """Simple MLP classification head that replaces the HuggingFace backbone.
+
+    Uses an embedding layer + masked mean pooling + 2-layer MLP.
+    Accepts the same forward signature as ClassificationHead.
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = 50304,
+        hidden_dim: int = 256,
+        num_tasks: int = 1,
+        task_type: str = "single_task",
+    ):
+        super().__init__()
+        self.task_type = task_type
+        self.num_tasks = num_tasks
+
+        output_dim = 2 if task_type == "single_task" else num_tasks
+
+        self.embedding = nn.Embedding(vocab_size, hidden_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        embeds = self.embedding(input_ids)  # (B, seq_len, hidden_dim)
+
+        # Masked mean pooling
+        mask = attention_mask.unsqueeze(-1).float()  # (B, seq_len, 1)
+        pooled = (embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)  # (B, hidden_dim)
+
+        logits = self.mlp(pooled)  # (B, output_dim)
+
+        loss = None
+        if labels is not None:
+            if self.task_type == "single_task":
+                loss = nn.CrossEntropyLoss()(logits, labels)
+            else:
+                loss = nn.BCEWithLogitsLoss()(logits, labels)
+
+        return logits, loss
+
+
 class RegressionHead(nn.Module):
     """This class implements a regression head with last-token pooling for scalar molecular property prediction.
 
