@@ -44,9 +44,12 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
-    loader = dc.data.CSVLoader(task_config.task_columns, feature_field=["smiles",task_config.task_columns[0]],
-                             featurizer=GPTFeaturizer(tokenizer, task_name))
-    
+    loader = dc.data.CSVLoader(tasks=task_config.task_columns,
+                             feature_field=["smiles",task_config.task_columns[0]],
+                             id_field = "smiles",
+                             featurizer=GPTFeaturizer(tokenizer, task_name, task_config.task_type))
+
+
     # Load data
     # train_df = pd.read_csv(f"{args.data_dir}/{task_name}/train.csv")
     # val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
