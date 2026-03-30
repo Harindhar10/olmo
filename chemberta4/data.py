@@ -30,8 +30,8 @@ class MoleculeNetDataset(Dataset):
       the loss.
     * **Causal LM regression** ('use_lm_head=True', 'experiment_type="regression"')
       — the target number is embedded directly into the prompt text (e.g.
-      ``"### Response:\\n3.14159"``). Tokenization happens per-sample in
-      ``__getitem__`` and prompt tokens are masked with -100 so that only the
+      ``"### Response:\\n3.14159"``). Tokenization is precomputed in
+      ``__init__`` and prompt tokens are masked with -100 so that only the
       answer portion contributes to the cross-entropy loss.
     * **Standard regression** — rows with missing labels are dropped; labels
       are stored as floats for RMSE loss.
@@ -121,24 +121,59 @@ class MoleculeNetDataset(Dataset):
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
         elif use_lm_head and experiment_type == "regression":
-            # CLM regression: embed the answer in the text; tokenize lazily
-            # per sample in __getitem__ using the reference's split-separator
-            # approach to avoid BPE tokenization boundary issues.
+            # CLM regression: embed the answer in the text and precompute
+            # tokenization with prompt-masked labels.
             _SEPARATOR = "### Response:\n"
             df = df.dropna(subset=task_columns).copy()
-            labels = df[task_columns[0]].values.astype(np.float32)
+            raw_labels = df[task_columns[0]].values.astype(np.float32)
 
-            self._clm_texts = [
+            clm_texts = [
                 f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}{v:.5f}{tokenizer.eos_token}"
-                for s, v in zip(df[smiles_column], labels)
+                for s, v in zip(df[smiles_column], raw_labels)
             ]
-            self._clm_separator = _SEPARATOR
-            self._tokenizer = tokenizer
-            self._max_len = max_len
-            self.label_values = torch.tensor(labels, dtype=torch.float32)
+
+            all_input_ids = []
+            all_attention_mask = []
+            all_labels = []
+            for text in clm_texts:
+                enc = tokenizer(
+                    text,
+                    truncation=True,
+                    padding="max_length",
+                    max_length=max_len,
+                    return_tensors="pt",
+                )
+                input_ids = enc["input_ids"].squeeze(0)
+                attention_mask = enc["attention_mask"].squeeze(0)
+                labels_t = input_ids.clone()
+
+                parts = text.split(_SEPARATOR)
+                if len(parts) >= 2:
+                    prompt_text = parts[0] + _SEPARATOR
+                    prompt_enc = tokenizer(
+                        prompt_text,
+                        truncation=True,
+                        max_length=max_len,
+                        return_tensors="pt",
+                    )
+                    prompt_len = prompt_enc["input_ids"].shape[1]
+                    if prompt_len < len(labels_t):
+                        labels_t[:prompt_len] = -100
+
+                labels_t[labels_t == tokenizer.pad_token_id] = -100
+                all_input_ids.append(input_ids)
+                all_attention_mask.append(attention_mask)
+                all_labels.append(labels_t)
+
+            self.encodings = {
+                "input_ids": torch.stack(all_input_ids),
+                "attention_mask": torch.stack(all_attention_mask),
+            }
+            self.labels = torch.stack(all_labels)
+            self.label_values = torch.tensor(raw_labels, dtype=torch.float32)
             self.label_mask = None
             self.num_samples = len(df)
-            return  # __getitem__ handles tokenization for CLM regression
+            return  # skip the shared tokenization below
 
         elif experiment_type == "regression":
             df = df.dropna(subset=task_columns).copy()
@@ -186,15 +221,9 @@ class MoleculeNetDataset(Dataset):
         2. Causal language modeling (CLM) regression mode
         Triggered when ``self.use_lm_head`` is True and
         ``self.experiment_type == "regression"``.
-        In this case:
-            - The full prompt + target text is tokenized.
-            - ``labels`` are initialized as a clone of ``input_ids``.
-            - Tokens corresponding to the prompt portion (before
-            ``self._clm_separator``) are masked with -100 so that loss is
-            computed only on the target portion.
-            - Padding tokens are also masked with -100.
-            - The original scalar regression value is returned separately as
-            ``label_values``.
+        Returns precomputed tokenized inputs with prompt-masked labels
+        (computed in ``__init__``), plus the original scalar regression
+        value as ``label_values``.
 
         Parameters
         ----------
@@ -226,40 +255,6 @@ class MoleculeNetDataset(Dataset):
         >>> sample["input_ids"].shape
         torch.Size([32])
         """
-        if self.use_lm_head and self.experiment_type == "regression":
-            text = self._clm_texts[idx]
-            enc = self._tokenizer(
-                text,
-                truncation=True,
-                padding="max_length",
-                max_length=self._max_len,
-                return_tensors="pt",
-            )
-            input_ids = enc["input_ids"].squeeze(0)
-            attention_mask = enc["attention_mask"].squeeze(0)
-            labels = input_ids.clone()
-
-            parts = text.split(self._clm_separator)
-            if len(parts) >= 2:
-                prompt_text = parts[0] + self._clm_separator
-                prompt_enc = self._tokenizer(
-                    prompt_text,
-                    truncation=True,
-                    max_length=self._max_len,
-                    return_tensors="pt",
-                )
-                prompt_len = prompt_enc["input_ids"].shape[1]
-                if prompt_len < len(labels):
-                    labels[:prompt_len] = -100
-
-            labels[labels == self._tokenizer.pad_token_id] = -100
-            return {
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-                "labels": labels,
-                "label_values": self.label_values[idx],
-            }
-
         item = {
             "input_ids": self.encodings["input_ids"][idx],
             "attention_mask": self.encodings["attention_mask"][idx],
@@ -267,6 +262,8 @@ class MoleculeNetDataset(Dataset):
         }
         if self.label_mask is not None:
             item["label_mask"] = self.label_mask[idx]
+        if hasattr(self, "label_values"):
+            item["label_values"] = self.label_values[idx]
         return item
 
 
@@ -317,7 +314,7 @@ class PretrainingDataset(Dataset):
             String prepended to each SMILES (default: 'SMILES: ').
         """
 
-        texts = [f"{prefix}{s}" for s in smiles_list]
+        texts = [f"{s}" for s in smiles_list]
 
         self.encodings = tokenizer(
             texts,
