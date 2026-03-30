@@ -163,25 +163,47 @@ class OLMoClassifier(pl.LightningModule):
                 bnb_4bit_use_double_quant=True,
             )
 
-        device_map = 'cpu' #get_device_map(self.device)
+        # device_map = 'cpu' #get_device_map(self.device)
 
         if hp.use_lm_head:
             # Use AutoModelForCausalLM with LM head
-
-            base = AutoModelForCausalLM.from_pretrained(
-            hp.model_name,
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-            use_cache=False,
-            low_cpu_mem_usage=True,
-            device_map=None,  # IMPORTANT
-            )
-
             # base = AutoModelForCausalLM.from_pretrained(
             #     hp.model_name,
             #     quantization_config=bnb_config,
             #     device_map=device_map,
+                
             # )
+            
+            # base = AutoModelForCausalLM.from_pretrained(
+            #     hp.model_name,
+            #     torch_dtype=torch.bfloat16,
+            #     trust_remote_code=True,
+            #     use_cache=False,
+            #     low_cpu_mem_usage=True,
+            #     device_map=None,
+            # )
+            from transformers import AutoConfig
+
+            config = AutoConfig.from_pretrained(
+                'allenai/OLMo-7b-hf',
+                trust_remote_code=True
+            )
+            config.dtype = 'bfloat16'
+            config.use_cache = False
+            
+            print('config:',config)
+            
+
+            base = AutoModelForCausalLM.from_config(
+                config,
+                trust_remote_code=True
+            )
+
+            print('Created randomly initialised Olmo')
+
+            # optionally move + set dtype
+            base = base.to(dtype=torch.bfloat16)
+
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
                     base, use_gradient_checkpointing=True
@@ -197,19 +219,49 @@ class OLMoClassifier(pl.LightningModule):
                 )
                 base = get_peft_model(base, lora_cfg)
 
-            if self.global_rank == 0:
-                base.print_trainable_parameters()
+            # if self.global_rank == 0:
+            #     base.print_trainable_parameters()
 
             self.model = CausalLMClassificationHead(
                 base, self.tokenizer, hp.num_tasks, hp.task_type
             )
         else:
             # Use AutoModel with classification head
-            base = AutoModel.from_pretrained(
-                hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
+            # base = AutoModel.from_pretrained(
+            #     hp.model_name,
+            #     quantization_config=bnb_config,
+            #     device_map=device_map,
+            # )
+            
+            # base = AutoModel.from_pretrained(
+            #     hp.model_name,
+            #     torch_dtype=torch.bfloat16,
+            #     trust_remote_code=True,
+            #     use_cache=False,
+            #     low_cpu_mem_usage=True,
+            #     device_map=None,
+            # )
+            from transformers import AutoConfig
+
+            config = AutoConfig.from_pretrained(
+                'allenai/OLMo-7b-hf',
+                trust_remote_code=True
             )
+
+            config.dtype = 'bfloat16'
+            config.use_cache = False
+            
+            print('config:',config)
+            base = AutoModelForCausalLM.from_config(
+                config,
+                trust_remote_code=True
+            )
+
+            print('Created randomly initialised Olmo')
+
+            # optionally move + set dtype
+            base = base.to(dtype=torch.bfloat16)
+
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
                     base, use_gradient_checkpointing=True
@@ -225,8 +277,8 @@ class OLMoClassifier(pl.LightningModule):
                 )
                 base = get_peft_model(base, lora_cfg)
 
-            if self.global_rank == 0:
-                base.print_trainable_parameters()
+            # if self.global_rank == 0:
+            #     base.print_trainable_parameters()
 
             self.model = ClassificationHead(base, hp.num_tasks, hp.task_type)
 
@@ -417,6 +469,13 @@ class OLMoClassifier(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
+    def configure_gradient_clipping(
+        self,
+        optimizer,
+        gradient_clip_val,
+        gradient_clip_algorithm):
+        
+        torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0)
 
 
 class OLMoRegressor(pl.LightningModule):
@@ -507,17 +566,30 @@ class OLMoRegressor(pl.LightningModule):
         device_map = "cpu" #get_device_map(self.device)
 
         if hp.use_lm_head:
+            # base = AutoModelForCausalLM.from_pretrained(
+            #     hp.model_name,
+            #     quantization_config=bnb_config,
+            #     device_map=device_map,)
             base = AutoModelForCausalLM.from_pretrained(
                 hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
-            )
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                use_cache=False,
+                low_cpu_mem_usage=True,
+                device_map=None,)
         else:
+            # base = AutoModel.from_pretrained(
+            #     hp.model_name,
+            #     quantization_config=bnb_config,
+            #     device_map=device_map,
+            # )
             base = AutoModel.from_pretrained(
                 hp.model_name,
-                quantization_config=bnb_config,
-                device_map=device_map,
-            )
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                use_cache=False,
+                low_cpu_mem_usage=True,
+                device_map=None,)
 
         if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
@@ -533,8 +605,8 @@ class OLMoRegressor(pl.LightningModule):
             )
             base = get_peft_model(base, lora_cfg)
 
-        if self.global_rank == 0:
-            base.print_trainable_parameters()
+        # if self.global_rank == 0:
+        #     base.print_trainable_parameters()
 
         if hp.use_lm_head:
             self.model = CausalLMRegressionHead(base, self.tokenizer)
@@ -750,6 +822,13 @@ class OLMoRegressor(pl.LightningModule):
             "lr_scheduler": {"scheduler": scheduler, "interval": "step", "frequency": 1},
         }
 
+    def configure_gradient_clipping(
+        self,
+        optimizer,
+        gradient_clip_val,
+        gradient_clip_algorithm):
+        
+        torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0)
 
 class OLMoPretrainer(pl.LightningModule):
     """This class implements a PyTorch Lightning module for causal language model pretraining.
@@ -876,8 +955,8 @@ class OLMoPretrainer(pl.LightningModule):
 
         self.model = model
 
-        if self.trainer.is_global_zero:
-            self.model.print_trainable_parameters()
+        # if self.trainer.is_global_zero:
+        #     self.model.print_trainable_parameters()
 
     def forward(
         self,

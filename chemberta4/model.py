@@ -128,7 +128,7 @@ class ClassificationHead(nn.Module):
         # Output dimension: 2 for single_task (class logits), num_tasks for multi_task
         output_dim = 2 if task_type == "single_task" else num_tasks
 
-        self.classifier = nn.Linear(backbone.config.hidden_size, output_dim)
+        self.classifier = nn.Linear(backbone.config.hidden_size, output_dim, dtype=torch.bfloat16)
 
         # Initialize with small weights
         nn.init.normal_(self.classifier.weight, mean=0.0, std=0.02)
@@ -305,7 +305,7 @@ class CausalLMClassificationHead(nn.Module):
 
         # For multi_task: project Yes/No diff to multiple outputs
         if task_type != "single_task":
-            self.task_projector = nn.Linear(1, num_tasks)
+            self.task_projector = nn.Linear(1, num_tasks, dtype=torch.bfloat16)
             nn.init.normal_(self.task_projector.weight, mean=0.0, std=0.02)
             nn.init.zeros_(self.task_projector.bias)
 
@@ -466,7 +466,7 @@ class RegressionHead(nn.Module):
         """
         super().__init__()
         self.backbone = backbone
-        self.regressor = nn.Linear(backbone.config.hidden_size, 1)
+        self.regressor = nn.Linear(backbone.config.hidden_size, 1, dtype=torch.bfloat16)
 
         # Initialize with small weights
         nn.init.normal_(self.regressor.weight, mean=0.0, std=0.02)
