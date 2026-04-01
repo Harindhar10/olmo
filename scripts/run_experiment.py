@@ -80,6 +80,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb_project", type=str, default=None)
     parser.add_argument("--wandb_entity", type=str, default=None)
     parser.add_argument("--wandb_key", type=str, default=None)
+    parser.add_argument("--wandb_notes", type=str, default=None)
 
     # Classification/Regression specific
     parser.add_argument("--data_dir", type=str, default=None)
@@ -90,7 +91,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--smiles_column", type=str, default=None)
     parser.add_argument("--hub_name", type=str, default=None)
     parser.add_argument("--val_ratio", type=float, default=None)
-    parser.add_argument("--val_check_interval", type=int, default=None)
+    parser.add_argument("--val_check_interval", type=float, default=1.0)
 
     args = parser.parse_args()
     return args
