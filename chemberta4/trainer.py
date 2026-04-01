@@ -174,35 +174,36 @@ class OLMoClassifier(pl.LightningModule):
                 
             # )
             
-            # base = AutoModelForCausalLM.from_pretrained(
-            #     hp.model_name,
-            #     torch_dtype=torch.bfloat16,
-            #     trust_remote_code=True,
-            #     use_cache=False,
-            #     low_cpu_mem_usage=True,
-            #     device_map=None,
+            base = AutoModelForCausalLM.from_pretrained(
+                hp.model_name,
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                use_cache=False,
+                low_cpu_mem_usage=True,
+                device_map=None,
+            )
+            
+            # from transformers import AutoConfig
+
+            # config = AutoConfig.from_pretrained(
+            #     'allenai/OLMo-7b-hf',
+            #     trust_remote_code=True
             # )
-            from transformers import AutoConfig
-
-            config = AutoConfig.from_pretrained(
-                'allenai/OLMo-7b-hf',
-                trust_remote_code=True
-            )
-            config.dtype = 'bfloat16'
-            config.use_cache = False
+            # config.dtype = 'bfloat16'
+            # config.use_cache = False
             
-            print('config:',config)
+            # print('config:',config)
             
 
-            base = AutoModelForCausalLM.from_config(
-                config,
-                trust_remote_code=True
-            )
+            # base = AutoModelForCausalLM.from_config(
+            #     config,
+            #     trust_remote_code=True
+            # )
 
-            print('Created randomly initialised Olmo')
+            # print('Created randomly initialised Olmo')
 
-            # optionally move + set dtype
-            base = base.to(dtype=torch.bfloat16)
+            # # optionally move + set dtype
+            # base = base.to(dtype=torch.bfloat16)
 
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
@@ -233,34 +234,35 @@ class OLMoClassifier(pl.LightningModule):
             #     device_map=device_map,
             # )
             
-            # base = AutoModel.from_pretrained(
-            #     hp.model_name,
-            #     torch_dtype=torch.bfloat16,
-            #     trust_remote_code=True,
-            #     use_cache=False,
-            #     low_cpu_mem_usage=True,
-            #     device_map=None,
-            # )
-            from transformers import AutoConfig
-
-            config = AutoConfig.from_pretrained(
-                'allenai/OLMo-7b-hf',
-                trust_remote_code=True
+            base = AutoModel.from_pretrained(
+                hp.model_name,
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                use_cache=False,
+                low_cpu_mem_usage=True,
+                device_map=None,
             )
-
-            config.dtype = 'bfloat16'
-            config.use_cache = False
             
-            print('config:',config)
-            base = AutoModelForCausalLM.from_config(
-                config,
-                trust_remote_code=True
-            )
+            # from transformers import AutoConfig
 
-            print('Created randomly initialised Olmo')
+            # config = AutoConfig.from_pretrained(
+            #     'allenai/OLMo-7b-hf',
+            #     trust_remote_code=True
+            # )
 
-            # optionally move + set dtype
-            base = base.to(dtype=torch.bfloat16)
+            # config.dtype = 'bfloat16'
+            # config.use_cache = False
+            
+            # print('config:',config)
+            # base = AutoModelForCausalLM.from_config(
+            #     config,
+            #     trust_remote_code=True
+            # )
+
+            # print('Created randomly initialised Olmo')
+
+            # # optionally move + set dtype
+            # base = base.to(dtype=torch.bfloat16)
 
             if hp.finetune_strategy == "qlora":
                 base = prepare_model_for_kbit_training(
