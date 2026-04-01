@@ -148,7 +148,7 @@ bace_regression:
 
 zinc20:
   task_columns: []
-  prompt: "SMILES:"
+  prompt: ""
   task_type: generation
   experiment_type: pretraining
   monitor_metric: train/loss
@@ -156,7 +156,7 @@ zinc20:
 
 pubchem:
   task_columns: []
-  prompt: "SMILES:"
+  prompt: ""
   task_type: generation
   experiment_type: pretraining
   monitor_metric: train/loss
