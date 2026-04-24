@@ -30,8 +30,8 @@ class MoleculeNetDataset(Dataset):
       the loss.
     * **Causal LM regression** ('use_lm_head=True', 'experiment_type="regression"')
       — the target number is embedded directly into the prompt text (e.g.
-      ``"### Response:\\n3.14159"``). Tokenization is precomputed in
-      ``__init__`` and prompt tokens are masked with -100 so that only the
+      ``"### Response:\\n3.14159"``). Tokenization happens per-sample in
+      ``__getitem__`` and prompt tokens are masked with -100 so that only the
       answer portion contributes to the cross-entropy loss.
     * **Standard regression** — rows with missing labels are dropped; labels
       are stored as floats for RMSE loss.
@@ -53,11 +53,11 @@ class MoleculeNetDataset(Dataset):
     ...     "single_task", "classification", max_len=32)
     >>> sample = ds[0]
     >>> list(sample.keys())
-    ['input_ids', 'attention_mask', 'labels']
+    ['text', 'labels']
     >>> sample["labels"].item()
     0
-    >>> sample["input_ids"].shape
-    torch.Size([32])
+    >>> isinstance(sample["text"], str)
+    True
     """
 
     def __init__(
@@ -102,6 +102,7 @@ class MoleculeNetDataset(Dataset):
         self.experiment_type = experiment_type
         self.num_tasks = len(task_columns)
         self.use_lm_head = use_lm_head
+        self.max_len = max_len
 
         # Process labels based on task type
         if task_type == "single_task":
@@ -121,59 +122,26 @@ class MoleculeNetDataset(Dataset):
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
         elif use_lm_head and experiment_type == "regression":
-            # CLM regression: embed the answer in the text and precompute
-            # tokenization with prompt-masked labels.
+            # CLM regression: embed the answer in the text; collate_fn tokenizes
+            # and masks prompt tokens using the separator approach.
             _SEPARATOR = "### Response:\n"
             df = df.dropna(subset=task_columns).copy()
-            raw_labels = df[task_columns[0]].values.astype(np.float32)
+            labels = df[task_columns[0]].values.astype(np.float32)
 
-            clm_texts = [
+            self.texts = [
                 f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}{v:.5f}{tokenizer.eos_token}"
-                for s, v in zip(df[smiles_column], raw_labels)
+                for s, v in zip(df[smiles_column], labels)
             ]
-
-            all_input_ids = []
-            all_attention_mask = []
-            all_labels = []
-            for text in clm_texts:
-                enc = tokenizer(
-                    text,
-                    truncation=True,
-                    padding="max_length",
-                    max_length=max_len,
-                    return_tensors="pt",
-                )
-                input_ids = enc["input_ids"].squeeze(0)
-                attention_mask = enc["attention_mask"].squeeze(0)
-                labels_t = input_ids.clone()
-
-                parts = text.split(_SEPARATOR)
-                if len(parts) >= 2:
-                    prompt_text = parts[0] + _SEPARATOR
-                    prompt_enc = tokenizer(
-                        prompt_text,
-                        truncation=True,
-                        max_length=max_len,
-                        return_tensors="pt",
-                    )
-                    prompt_len = prompt_enc["input_ids"].shape[1]
-                    if prompt_len < len(labels_t):
-                        labels_t[:prompt_len] = -100
-
-                labels_t[labels_t == tokenizer.pad_token_id] = -100
-                all_input_ids.append(input_ids)
-                all_attention_mask.append(attention_mask)
-                all_labels.append(labels_t)
-
-            self.encodings = {
-                "input_ids": torch.stack(all_input_ids),
-                "attention_mask": torch.stack(all_attention_mask),
-            }
-            self.labels = torch.stack(all_labels)
-            self.label_values = torch.tensor(raw_labels, dtype=torch.float32)
+            # Pre-compute prompt portion so collate_fn can measure its token length
+            self._clm_prompt_texts = [
+                f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}"
+                for s in df[smiles_column]
+            ]
+            self.label_values = torch.tensor(labels, dtype=torch.float32)
             self.label_mask = None
             self.num_samples = len(df)
-            return  # skip the shared tokenization below
+            self.max_len = max_len
+            return  # __getitem__ returns raw text; collate_fn handles tokenization
 
         elif experiment_type == "regression":
             df = df.dropna(subset=task_columns).copy()
@@ -184,23 +152,17 @@ class MoleculeNetDataset(Dataset):
         else:
             raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
-        # Build prompts
+        # Build prompts; tokenization is deferred to collate_fn
         if use_lm_head:
-            texts = [
+            self.texts = [
                 f"Molecule: {s}\nQuestion: {prompt}\nAnswer:"
                 for s in df[smiles_column]
             ]
         else:
-            texts = [f"Molecule: {s}\n{prompt}" for s in df[smiles_column]]
+            self.texts = [f"Molecule: {s}\n{prompt}" for s in df[smiles_column]]
+            #self.texts = [f"{s}" for s in df[smiles_column]]
+            #print('Using empty prompt. self.texts samples',self.texts[:2])
 
-        # Tokenize all at once
-        self.encodings = tokenizer(
-            texts,
-            truncation=True,
-            padding="max_length",
-            max_length=max_len,
-            return_tensors="pt",
-        )
         self.num_samples = len(df)
 
     def __len__(self) -> int:
@@ -221,9 +183,15 @@ class MoleculeNetDataset(Dataset):
         2. Causal language modeling (CLM) regression mode
         Triggered when ``self.use_lm_head`` is True and
         ``self.experiment_type == "regression"``.
-        Returns precomputed tokenized inputs with prompt-masked labels
-        (computed in ``__init__``), plus the original scalar regression
-        value as ``label_values``.
+        In this case:
+            - The full prompt + target text is tokenized.
+            - ``labels`` are initialized as a clone of ``input_ids``.
+            - Tokens corresponding to the prompt portion (before
+            ``self._clm_separator``) are masked with -100 so that loss is
+            computed only on the target portion.
+            - Padding tokens are also masked with -100.
+            - The original scalar regression value is returned separately as
+            ``label_values``.
 
         Parameters
         ----------
@@ -249,21 +217,25 @@ class MoleculeNetDataset(Dataset):
         ...     "single_task", "classification", max_len=32)
         >>> sample = ds[0]
         >>> list(sample.keys())
-        ['input_ids', 'attention_mask', 'labels']
+        ['text', 'labels']
         >>> sample["labels"].item()
         0
-        >>> sample["input_ids"].shape
-        torch.Size([32])
+        >>> isinstance(sample["text"], str)
+        True
         """
+        if self.use_lm_head and self.experiment_type == "regression":
+            return {
+                "text": self.texts[idx],
+                "prompt_text": self._clm_prompt_texts[idx],
+                "label_values": self.label_values[idx],
+            }
+
         item = {
-            "input_ids": self.encodings["input_ids"][idx],
-            "attention_mask": self.encodings["attention_mask"][idx],
+            "text": self.texts[idx],
             "labels": self.labels[idx],
         }
         if self.label_mask is not None:
             item["label_mask"] = self.label_mask[idx]
-        if hasattr(self, "label_values"):
-            item["label_values"] = self.label_values[idx]
         return item
 
 
@@ -314,7 +286,7 @@ class PretrainingDataset(Dataset):
             String prepended to each SMILES (default: 'SMILES: ').
         """
 
-        texts = [f"{s}" for s in smiles_list]
+        texts = [f"{prefix}{s}" for s in smiles_list]
 
         self.encodings = tokenizer(
             texts,
@@ -470,3 +442,67 @@ class InstructionDataset(Dataset):
             "labels": labels.squeeze(0),
         }
 
+
+def make_collate_fn(tokenizer: PreTrainedTokenizerBase, max_len: int):
+    """Return a collate function that tokenizes and pads to the longest sequence in the batch.
+
+    The tokenizer is called once per batch with ``padding="longest"`` and
+    ``truncation=True``, so each batch is padded only to its own longest
+    sequence rather than a global maximum.
+
+    For CLM regression samples (those with a ``"prompt_text"`` key) the
+    function additionally masks prompt tokens and padding tokens in ``labels``
+    with -100 so that only the answer portion contributes to the loss.
+
+    Parameters
+    ----------
+    tokenizer : PreTrainedTokenizerBase
+        HuggingFace tokenizer used for encoding.
+    max_len : int
+        Maximum sequence length for truncation.
+
+    Returns
+    -------
+    Callable
+        A collate function suitable for ``torch.utils.data.DataLoader``.
+    """
+    def collate_fn(samples: List[Dict]) -> Dict[str, torch.Tensor]:
+        is_clm_regression = "prompt_text" in samples[0]
+
+        texts = [s["text"] for s in samples]
+        enc = tokenizer(
+            texts,
+            truncation=True,
+            padding="longest",
+            max_length=max_len,
+            return_tensors="pt",
+        )
+        input_ids = enc["input_ids"]
+        attention_mask = enc["attention_mask"]
+
+        if is_clm_regression:
+            labels = input_ids.clone()
+            # Mask prompt tokens (per-sample length) and padding tokens with -100
+            prompt_texts = [s["prompt_text"] for s in samples]
+            prompt_enc = tokenizer(
+                prompt_texts,
+                truncation=True,
+                max_length=max_len,
+            )
+            for i, prompt_ids in enumerate(prompt_enc["input_ids"]):
+                labels[i, : len(prompt_ids)] = -100
+            labels[input_ids == tokenizer.pad_token_id] = -100
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "label_values": torch.stack([s["label_values"] for s in samples]),
+            }
+
+        labels = torch.stack([s["labels"] for s in samples])
+        batch = {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
+        if "label_mask" in samples[0]:
+            batch["label_mask"] = torch.stack([s["label_mask"] for s in samples])
+        return batch
+
+    return collate_fn

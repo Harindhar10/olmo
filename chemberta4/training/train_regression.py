@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-from chemberta4.data import MoleculeNetDataset
+from chemberta4.data import MoleculeNetDataset, make_collate_fn
 from chemberta4.trainer import OLMoRegressor
 from chemberta4.utils import get_task, is_main_process, log0
 
@@ -102,7 +102,9 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         "num_workers": args.num_workers,
         "pin_memory": True,
         "persistent_workers": args.num_workers > 0,
+        "collate_fn": make_collate_fn(tokenizer, args.max_len),
     }
+
     train_loader = DataLoader(train_ds, shuffle=True, **loader_kwargs)
     val_loader = DataLoader(val_ds, shuffle=False, **loader_kwargs)
     test_loader = DataLoader(test_ds, shuffle=False, **loader_kwargs)
@@ -168,7 +170,7 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
         activation_checkpointing_policy=auto_wrap_policy,
-        cpu_offload=True,
+        cpu_offload=False,
         use_orig_params=True,
         sync_module_states=True,
     )
