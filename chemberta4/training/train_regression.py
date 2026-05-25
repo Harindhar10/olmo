@@ -61,8 +61,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     val_df = pd.read_csv(f"{args.data_dir}/{task_name}/valid.csv")
     test_df = pd.read_csv(f"{args.data_dir}/{task_name}/test.csv")
 
-    use_lm_head = getattr(args, "use_lm_head", False)
-
     train_ds = MoleculeNetDataset(
         train_df,
         tokenizer,
@@ -71,7 +69,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        use_lm_head=use_lm_head,
     )
     val_ds = MoleculeNetDataset(
         val_df,
@@ -81,7 +78,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        use_lm_head=use_lm_head,
     )
     test_ds = MoleculeNetDataset(
         test_df,
@@ -91,7 +87,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        use_lm_head=use_lm_head,
     )
 
     log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
@@ -119,7 +114,6 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
-        use_lm_head=use_lm_head,
     )
 
     # Callbacks

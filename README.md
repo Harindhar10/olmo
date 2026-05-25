@@ -99,9 +99,6 @@ python scripts/run_experiment.py --datasets bbbp --lr 0.001 --epochs 20 --batch_
 # QLoRA (default)
 python scripts/run_experiment.py --datasets bbbp
 
-# LM-head approach (Yes/No token prediction instead of a linear head)
-python scripts/run_experiment.py --datasets bace_classification --use_lm_head
-
 # LoRA without 4-bit quantization
 python scripts/run_experiment.py --datasets bbbp --finetune_strategy lora
 
@@ -168,13 +165,6 @@ python scripts/run_experiment.py --datasets bbbp --finetune_strategy full_finetu
 | LoRA | `--finetune_strategy lora` | LoRA adapters, no quantization |
 | Full fine-tuning | `--finetune_strategy full_finetune` | All parameters trainable |
 
-### Classification head options
-
-| Mode | Flag | Description |
-|---|---|---|
-| Linear head | *(default)* | Last-token pooling + linear projection |
-| LM head | `--use_lm_head` | Extracts Yes/No logits from the pretrained LM head |
-
 ## Full Pipeline: Pretrain &#8594; Instruct &#8594; Fine-tune
 
 For best results, chain the stages:
@@ -225,7 +215,7 @@ python scripts/run_experiment.py --datasets my_dataset --data_dir path/to/splits
 ```
 olmo/
 ├── chemberta4/                  # Core library
-│   ├── model.py               # ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
+│   ├── model.py               # ClassificationHead, RegressionHead
 │   ├── data.py                # MoleculeNetDataset, PretrainingDataset, InstructionDataset
 │   ├── trainer.py             # Lightning modules (OLMoClassifier, OLMoRegressor, OLMoPretrainer)
 │   ├── callbacks.py           # Wandb logging callback

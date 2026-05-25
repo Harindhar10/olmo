@@ -17,11 +17,11 @@ from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
-from chemberta4.model import ClassificationHead, CausalLMClassificationHead, RegressionHead, CausalLMRegressionHead
+from chemberta4.model import ClassificationHead, RegressionHead
 from chemberta4.utils import get_device_map
 
 
@@ -29,7 +29,6 @@ class OLMoClassifier(pl.LightningModule):
     """This class implements a PyTorch Lightning module for molecular classification tasks.
 
     It supports single-task and multi-task classification.
-    It can use either a classification head or an LM head for Yes/No token prediction.
     It supports QLoRA (4-bit quantization), LoRA, and full finetuning strategies.
 
     Orchestrates the full classification training loop on top of OLMo (or any
@@ -62,7 +61,6 @@ class OLMoClassifier(pl.LightningModule):
         model_name: str = "allenai/OLMo-7B-hf",
         num_tasks: int = 1,
         task_type: str = "single_task",
-        use_lm_head: bool = False,
         finetune_strategy: str = "qlora",
         lr: float = 2e-4,
         weight_decay: float = 0.01,
@@ -81,8 +79,6 @@ class OLMoClassifier(pl.LightningModule):
             Number of classification tasks/labels.
         task_type : str
             One of 'single_task' or 'multi_task'.
-        use_lm_head : bool
-            If 'True', use Yes/No LM-head prediction instead of a classification head.
         finetune_strategy : str
             One of 'qlora' (4-bit + LoRA), 'lora' (LoRA only), or
             'full_finetune' (all parameters trainable).
@@ -164,121 +160,32 @@ class OLMoClassifier(pl.LightningModule):
                 bnb_4bit_use_double_quant=True,
             )
 
-        # device_map = 'cpu' #get_device_map(self.device)
 
-        if hp.use_lm_head:
-            # Use AutoModelForCausalLM with LM head
-            # base = AutoModelForCausalLM.from_pretrained(
-            #     hp.model_name,
-            #     quantization_config=bnb_config,
-            #     device_map=device_map,
-                
-            # )
-            
-            base = AutoModelForCausalLM.from_pretrained(
-                hp.model_name,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-                use_cache=False,
-                low_cpu_mem_usage=True,
-                device_map=None,
-                attn_implementation="flash_attention_2"
+        base = AutoModel.from_pretrained(
+            hp.model_name,
+            torch_dtype=torch.bfloat16,
+            quantization_config = bnb_config,
+            trust_remote_code=True,
+            use_cache=False,
+            low_cpu_mem_usage=True,
+            device_map=None,
+            attn_implementation="flash_attention_2"
+        )
+
+        if hp.finetune_strategy == "qlora":
+            base = prepare_model_for_kbit_training(
+                base, use_gradient_checkpointing=True
             )
-
-            # config = AutoConfig.from_pretrained(
-            #     'allenai/OLMo-7b-hf',
-            #     trust_remote_code=True
-            # )
-            # config.dtype = 'bfloat16'
-            # config.use_cache = False
-            
-            # print('config:',config)
-            
-
-            # base = AutoModelForCausalLM.from_config(
-            #     config,
-            #     trust_remote_code=True
-            # )
-
-            # print('Created randomly initialised Olmo')
-
-            # # optionally move + set dtype
-            # base = base.to(dtype=torch.bfloat16)
-
-            if hp.finetune_strategy == "qlora":
-                base = prepare_model_for_kbit_training(
-                    base, use_gradient_checkpointing=True
-                )
-            if hp.finetune_strategy != "full_finetune":
-                lora_cfg = LoraConfig(
-                    r=hp.lora_r,
-                    lora_alpha=hp.lora_alpha,
-                    target_modules=["q_proj", "k_proj", "v_proj"],
-                    lora_dropout=hp.lora_dropout,
-                    bias="none",
-                    task_type="CAUSAL_LM",
-                )
-                base = get_peft_model(base, lora_cfg)
-
-            # if self.global_rank == 0:
-            #     base.print_trainable_parameters()
-
-            self.model = CausalLMClassificationHead(
-                base, self.tokenizer, hp.num_tasks, hp.task_type
+        if hp.finetune_strategy != "full_finetune":
+            lora_cfg = LoraConfig(
+                r=hp.lora_r,
+                lora_alpha=hp.lora_alpha,
+                target_modules=["q_proj", "k_proj", "v_proj"],
+                lora_dropout=hp.lora_dropout,
+                bias="none",
+                task_type="FEATURE_EXTRACTION",
             )
-        else:
-            # Use AutoModel with classification head
-            # base = AutoModel.from_pretrained(
-            #     hp.model_name,
-            #     quantization_config=bnb_config,
-            #     device_map=device_map,
-            # )
-
-            base = AutoModel.from_pretrained(
-                hp.model_name,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-                use_cache=False,
-                low_cpu_mem_usage=True,
-                device_map=None,
-                attn_implementation="flash_attention_2"
-            )
-
-            # from transformers import AutoConfig
-
-            # config = AutoConfig.from_pretrained(
-            #     'allenai/OLMo-7b-hf',
-            #     trust_remote_code=True
-            # )
-
-            # config.dtype = 'bfloat16'
-            # config.use_cache = False
-
-            # print('config:',config)
-            # base = AutoModel.from_config(
-            #     config,
-            #     trust_remote_code=True
-            # )
-
-            # print('Created randomly initialised Olmo')
-
-            # # optionally move + set dtype
-            # base = base.to(dtype=torch.bfloat16)
-
-            if hp.finetune_strategy == "qlora":
-                base = prepare_model_for_kbit_training(
-                    base, use_gradient_checkpointing=True
-                )
-            if hp.finetune_strategy != "full_finetune":
-                lora_cfg = LoraConfig(
-                    r=hp.lora_r,
-                    lora_alpha=hp.lora_alpha,
-                    target_modules=["q_proj", "k_proj", "v_proj"],
-                    lora_dropout=hp.lora_dropout,
-                    bias="none",
-                    task_type="FEATURE_EXTRACTION",
-                )
-                base = get_peft_model(base, lora_cfg)
+            base = get_peft_model(base, lora_cfg)
 
             # if self.global_rank == 0:
             #     base.print_trainable_parameters()
@@ -484,20 +391,16 @@ class OLMoClassifier(pl.LightningModule):
 class OLMoRegressor(pl.LightningModule):
     """This class implements a PyTorch Lightning module for molecular regression tasks.
 
-    Supports two head types selected by 'use_lm_head':
-
-    * 'False' (default): 'RegressionHead' — last-token pooling + linear layer,
-      trained with RMSE loss on raw labels.
-    * 'True': 'CausalLMRegressionHead' — teacher-forced causal LM with
-      cross-entropy loss during training; generates text and parses a float
-      with regex during validation/test for RMSE reporting.
+    Uses 'RegressionHead' — last-token pooling + linear layer, trained with
+    RMSE loss on raw labels. Supports QLoRA (4-bit quantization), LoRA, and
+    full finetuning strategies.
 
     Examples
     --------
     >>> from chemberta4.trainer import OLMoRegressor
     >>> reg = OLMoRegressor()
-    >>> reg.hparams.use_lm_head
-    False
+    >>> reg.model is None
+    True
     """
 
     def __init__(
@@ -510,7 +413,6 @@ class OLMoRegressor(pl.LightningModule):
         lora_r: int = 32,
         lora_alpha: int = 64,
         lora_dropout: float = 0.05,
-        use_lm_head: bool = False,
     ):
         """Initialise OLMoRegressor.
 
@@ -532,10 +434,6 @@ class OLMoRegressor(pl.LightningModule):
             LoRA alpha.
         lora_dropout : float
             LoRA dropout rate.
-        use_lm_head : bool
-            If 'True', use 'CausalLMRegressionHead' with cross-entropy training
-            and text-generation evaluation. If 'False', use 'RegressionHead'
-            with direct RMSE loss.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -566,103 +464,36 @@ class OLMoRegressor(pl.LightningModule):
                 bnb_4bit_use_double_quant=True,
             )
 
-        device_map = "cpu" #get_device_map(self.device)
-
-        if hp.use_lm_head:
-            # base = AutoModelForCausalLM.from_pretrained(
-            #     hp.model_name,
-            #     quantization_config=bnb_config,
-            #     device_map=device_map,)
             
-            base = AutoModelForCausalLM.from_pretrained(
-                hp.model_name,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-                use_cache=False,
-                low_cpu_mem_usage=True,
-                device_map=None,
-                attn_implementation="flash_attention_2")
-
-
-            # config = AutoConfig.from_pretrained(
-            #     'allenai/OLMo-7b-hf',
-            #     trust_remote_code=True
-            # )
-            # config.dtype = 'bfloat16'
-            # config.use_cache = False
-            
-            # print('config:',config)
-            
-
-            # base = AutoModelForCausalLM.from_config(
-            #     config,
-            #     trust_remote_code=True
-            # )
-
-            # print('Created randomly initialised Olmo')
-
-            # # optionally move + set dtype
-            # base = base.to(dtype=torch.bfloat16)
-
-        else:
-            # base = AutoModel.from_pretrained(
-            #     hp.model_name,
-            #     quantization_config=bnb_config,
-            #     device_map=device_map,
-            # )
-            
-            base = AutoModel.from_pretrained(
-                hp.model_name,
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-                use_cache=False,
-                low_cpu_mem_usage=True,
-                device_map=None,
-                attn_implementation="flash_attention_2")
-
-
-            # config = AutoConfig.from_pretrained(
-            #     'allenai/OLMo-7b-hf',
-            #     trust_remote_code=True
-            # )
-            # config.dtype = 'bfloat16'
-            # config.use_cache = False
-            
-            # print('config:',config)
-            
-
-            # base = AutoModel.from_config(
-            #     config,
-            #     trust_remote_code=True
-            # )
-
-            # print('Created randomly initialised Olmo')
-
-            # optionally move + set dtype
-            # base = base.to(dtype=torch.bfloat16)
+        base = AutoModel.from_pretrained(
+            hp.model_name,
+            torch_dtype=torch.bfloat16,
+            quantization_config = bnb_config,
+            trust_remote_code=True,
+            use_cache=False,
+            low_cpu_mem_usage=True,
+            device_map=None,
+            attn_implementation="flash_attention_2")
 
 
         if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
         if hp.finetune_strategy != "full_finetune":
-            lora_task_type = TaskType.CAUSAL_LM if hp.use_lm_head else "FEATURE_EXTRACTION"
             lora_cfg = LoraConfig(
                 r=hp.lora_r,
                 lora_alpha=hp.lora_alpha,
                 target_modules=["q_proj", "k_proj", "v_proj"],
                 lora_dropout=hp.lora_dropout,
                 bias="none",
-                task_type=lora_task_type,
+                task_type="FEATURE_EXTRACTION",
             )
             base = get_peft_model(base, lora_cfg)
 
         # if self.global_rank == 0:
         #     base.print_trainable_parameters()
 
-        if hp.use_lm_head:
-            self.model = CausalLMRegressionHead(base, self.tokenizer)
-        else:
-            self.model = RegressionHead(base)
+
+        self.model = RegressionHead(base)
 
     def forward(
         self,
@@ -703,8 +534,6 @@ class OLMoRegressor(pl.LightningModule):
         torch.Tensor
             Scalar loss tensor.
         """
-        if self.hparams.use_lm_head:
-            return self._clm_step(batch, stage)
 
         preds, loss = self(
             batch["input_ids"],
@@ -721,57 +550,6 @@ class OLMoRegressor(pl.LightningModule):
 
         return loss
 
-    def _clm_step(self, batch: Dict[str, torch.Tensor], stage: str) -> torch.Tensor:
-        """Handle a batch for the CausalLMRegressionHead.
-
-        During training, computes and logs cross-entropy loss.
-        During validation/test, generates text, parses floats with regex,
-        and logs RMSE/MAE.
-
-        Parameters
-        ----------
-        batch : Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels' (token IDs with
-            -100 masking), and 'label_values' (raw float targets, eval only).
-        stage : str
-            One of 'train', 'val', or 'test'.
-
-        Returns
-        -------
-        torch.Tensor
-            Cross-entropy loss for training, RMSE for validation/test.
-        """
-        if stage == "train":
-            _, loss = self(
-                batch["input_ids"],
-                batch["attention_mask"],
-                batch["labels"],
-            )
-            self.log("train/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
-            return loss
-
-        # Evaluation: generate text and parse predicted numbers
-        parsed_preds = self.model.generate_and_parse(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["labels"],
-        )
-        true_vals = batch["label_values"].to(parsed_preds.device)
-
-        valid = ~(torch.isnan(parsed_preds) | torch.isnan(true_vals))
-        if valid.any():
-            rmse = torch.sqrt(
-                ((parsed_preds[valid] - true_vals[valid]) ** 2).mean() + 1e-6
-            )
-            mae = torch.abs(parsed_preds[valid] - true_vals[valid]).mean()
-        else:
-            rmse = torch.tensor(float("nan"), device=self.device)
-            mae = torch.tensor(float("nan"), device=self.device)
-
-        self.log(f"{stage}/rmse", rmse, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log(f"{stage}/mae", mae, on_epoch=True, sync_dist=True)
-
-        return rmse
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
@@ -880,6 +658,7 @@ class OLMoRegressor(pl.LightningModule):
         gradient_clip_algorithm):
         
         torch.nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+
 
 class OLMoPretrainer(pl.LightningModule):
     """This class implements a PyTorch Lightning module for causal language model pretraining.

@@ -1,8 +1,7 @@
 """Unit tests for classification model heads.
 
 Tests the core forward-pass logic, output shapes, and loss computation
-for ClassificationHead, CausalLMClassificationHead, and the shared
-last_token_pool utility.
+for ClassificationHead and the shared last_token_pool utility.
 """
 
 from types import SimpleNamespace
@@ -13,7 +12,6 @@ import torch.nn as nn
 
 from chemberta4.model import (
     ClassificationHead,
-    CausalLMClassificationHead,
     last_token_pool,
 )
 
@@ -42,37 +40,6 @@ class DummyBackboneClassification(nn.Module):
     ) -> SimpleNamespace:
         h = self.embed(input_ids)
         return SimpleNamespace(hidden_states=[h])
-
-
-class DummyLM(nn.Module):
-    """Minimal causal LM stub for CausalLMClassificationHead tests.
-
-    Replaces: A full AutoModelForCausalLM (too large for unit tests).
-    """
-
-    VOCAB_SIZE = 256
-
-    def __init__(self, hidden_size: int = 16):
-        super().__init__()
-        self.embed = nn.Embedding(self.VOCAB_SIZE, hidden_size)
-        self.lm_head = nn.Linear(hidden_size, self.VOCAB_SIZE)
-
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> SimpleNamespace:
-        h = self.embed(input_ids)
-        return SimpleNamespace(logits=self.lm_head(h))
-
-
-class DummyTokenizerForLM:
-    """Minimal tokenizer stub for CausalLMClassificationHead tests.
-
-    Replaces: The real HuggingFace tokenizer (token IDs would exceed
-        DummyLM's small vocabulary).
-    """
-
-    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
-        return [ord(text[0])]
 
 
 # ---------------------------------------------------------------------------
@@ -214,94 +181,3 @@ class TestClassificationHead:
         _, loss_partial = head(ids, mask, labels=labels, label_mask=partial_mask)
 
         assert not torch.isclose(loss_full, loss_partial)
-
-
-# ---------------------------------------------------------------------------
-# CausalLMClassificationHead
-# ---------------------------------------------------------------------------
-
-
-class TestCausalLMClassificationHead:
-    """Tests for CausalLMClassificationHead.
-
-    This head re-uses the LM vocabulary head to score Yes/No tokens
-    instead of adding a separate classifier. It has two distinct paths:
-    single_task stacks [No, Yes] logits, while multi_task projects the
-    Yes-No difference through a learned linear layer. Correctness of
-    token ID lookup and the presence/absence of the projector layer
-    are the key things to verify.
-    """
-
-    B, S = 2, 8
-
-    def _input(self) -> tuple[torch.Tensor, torch.Tensor]:
-        ids = torch.zeros(self.B, self.S, dtype=torch.long)
-        mask = torch.ones(self.B, self.S, dtype=torch.long)
-        return ids, mask
-
-    def test_single_task_yes_no_logits(self):
-        """Verify that single-task mode stores the correct Yes/No token IDs
-        and produces [B, 2] logits with no loss during inference.
-
-        The Yes/No token IDs are looked up once at init and used every
-        forward pass to slice into the vocabulary logits. If these IDs are
-        wrong, the model scores the wrong tokens and classification is
-        meaningless. The output must be [B, 2] with ordering [No, Yes]
-        so that class index 1 = positive.
-        """
-        head = CausalLMClassificationHead(
-            DummyLM(), DummyTokenizerForLM(), num_tasks=1, task_type="single_task"
-        )
-        ids, mask = self._input()
-
-        assert head.yes_token_id == ord("Y")
-        assert head.no_token_id == ord("N")
-
-        logits, loss = head(ids, mask)
-        assert logits.shape == (self.B, 2)
-        assert loss is None
-
-    def test_single_task_with_labels(self):
-        """Verify that providing labels produces a finite scalar
-        CrossEntropyLoss for single-task mode.
-
-        Without a working loss, the model cannot train. This test
-        confirms the loss computation path activates and returns a
-        properly shaped, finite tensor.
-        """
-        head = CausalLMClassificationHead(
-            DummyLM(), DummyTokenizerForLM(), num_tasks=1, task_type="single_task"
-        )
-        ids, mask = self._input()
-        labels = torch.zeros(self.B, dtype=torch.long)
-
-        logits, loss = head(ids, mask, labels=labels)
-        assert logits.shape == (self.B, 2)
-        assert loss is not None
-        assert loss.shape == ()
-        assert torch.isfinite(loss)
-
-    def test_multi_task_uses_projector(self):
-        """Verify that multi_task mode creates a task_projector layer that
-        maps the scalar Yes-No difference to num_tasks outputs, and that
-        single_task mode does NOT have this layer.
-
-        The projector is the architectural difference between single and
-        multi-task CausalLM classification. Its absence in single_task
-        and correct output dimension in multi_task are both critical.
-        """
-        n_tasks = 4
-        head_multi = CausalLMClassificationHead(
-            DummyLM(), DummyTokenizerForLM(), num_tasks=n_tasks, task_type="multi_task"
-        )
-        head_single = CausalLMClassificationHead(
-            DummyLM(), DummyTokenizerForLM(), num_tasks=1, task_type="single_task"
-        )
-
-        assert hasattr(head_multi, "task_projector")
-        assert head_multi.task_projector.out_features == n_tasks
-        assert not hasattr(head_single, "task_projector")
-
-        ids, mask = self._input()
-        logits, _ = head_multi(ids, mask)
-        assert logits.shape == (self.B, n_tasks)

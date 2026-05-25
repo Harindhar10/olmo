@@ -17,8 +17,7 @@ class MoleculeNetDataset(Dataset):
     """
     A PyTorch dataset that wraps MoleculeNet CSV data for molecular property
     prediction. It supports classification (single-task and multi-task) and
-    regression, with two prompt formats depending on whether a linear head or
-    the language model head is used.
+    regression.
 
     Label processing depends on the combination of 'task_type' and
     'experiment_type':
@@ -28,17 +27,8 @@ class MoleculeNetDataset(Dataset):
     * **multi_task classification** — all rows are kept; a boolean mask tracks
       which labels are present so that missing values (NaN) are excluded from
       the loss.
-    * **Causal LM regression** ('use_lm_head=True', 'experiment_type="regression"')
-      — the target number is embedded directly into the prompt text (e.g.
-      ``"### Response:\\n3.14159"``). Tokenization happens per-sample in
-      ``__getitem__`` and prompt tokens are masked with -100 so that only the
-      answer portion contributes to the cross-entropy loss.
     * **Standard regression** — rows with missing labels are dropped; labels
       are stored as floats for RMSE loss.
-
-    When 'use_lm_head=True' for classification, the prompt ends with
-    ``"Answer:"`` so the language model head can score Yes/No token
-    probabilities instead of using a separate linear classifier.
 
     Examples
     --------
@@ -69,7 +59,6 @@ class MoleculeNetDataset(Dataset):
         task_type: str,
         experiment_type: str,
         max_len: int = 128,
-        use_lm_head: bool = False,
         smiles_column: str = "smiles",
     ) -> None:
         """Initialise MoleculeNetDataset.
@@ -90,10 +79,6 @@ class MoleculeNetDataset(Dataset):
             One of 'classification' or 'regression'.
         max_len : int
             Maximum token sequence length for truncation/padding.
-        use_lm_head : bool
-            If 'True', format prompts for Yes/No LM-head prediction
-            (classification) or embed the answer in the text for teacher-forced
-            causal LM regression.
         smiles_column : str
             Name of the column containing SMILES strings.
         """
@@ -101,7 +86,6 @@ class MoleculeNetDataset(Dataset):
         self.task_type = task_type
         self.experiment_type = experiment_type
         self.num_tasks = len(task_columns)
-        self.use_lm_head = use_lm_head
         self.max_len = max_len
 
         # Process labels based on task type
@@ -121,28 +105,6 @@ class MoleculeNetDataset(Dataset):
             labels_array = np.nan_to_num(labels_array, nan=0.0)
             self.labels = torch.tensor(labels_array, dtype=torch.float32)
 
-        elif use_lm_head and experiment_type == "regression":
-            # CLM regression: embed the answer in the text; collate_fn tokenizes
-            # and masks prompt tokens using the separator approach.
-            _SEPARATOR = "### Response:\n"
-            df = df.dropna(subset=task_columns).copy()
-            labels = df[task_columns[0]].values.astype(np.float32)
-
-            self.texts = [
-                f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}{v:.5f}{tokenizer.eos_token}"
-                for s, v in zip(df[smiles_column], labels)
-            ]
-            # Pre-compute prompt portion so collate_fn can measure its token length
-            self._clm_prompt_texts = [
-                f"Molecule: {s}\nQuestion: {prompt}\n{_SEPARATOR}"
-                for s in df[smiles_column]
-            ]
-            self.label_values = torch.tensor(labels, dtype=torch.float32)
-            self.label_mask = None
-            self.num_samples = len(df)
-            self.max_len = max_len
-            return  # __getitem__ returns raw text; collate_fn handles tokenization
-
         elif experiment_type == "regression":
             df = df.dropna(subset=task_columns).copy()
             labels = df[task_columns[0]].values.astype(np.float32)
@@ -153,15 +115,7 @@ class MoleculeNetDataset(Dataset):
             raise ValueError(f"Unknown experiment_type: {experiment_type}")
 
         # Build prompts; tokenization is deferred to collate_fn
-        if use_lm_head:
-            self.texts = [
-                f"Molecule: {s}\nQuestion: {prompt}\nAnswer:"
-                for s in df[smiles_column]
-            ]
-        else:
-            self.texts = [f"Molecule: {s}\n{prompt}" for s in df[smiles_column]]
-            #self.texts = [f"{s}" for s in df[smiles_column]]
-            #print('Using empty prompt. self.texts samples',self.texts[:2])
+        self.texts = [f"Molecule: {s}\n{prompt}" for s in df[smiles_column]]
 
         self.num_samples = len(df)
 
@@ -173,25 +127,9 @@ class MoleculeNetDataset(Dataset):
         """
         Retrieve a single dataset sample formatted for transformer training.
 
-        This method supports two modes of operation:
-
-        1. Standard encoder-style training (classification or regression)
-        Returns pre-tokenized inputs stored in ``self.encodings`` along with
-        their corresponding labels. Optionally includes a ``label_mask`` for
-        multi-task setups with missing labels.
-
-        2. Causal language modeling (CLM) regression mode
-        Triggered when ``self.use_lm_head`` is True and
-        ``self.experiment_type == "regression"``.
-        In this case:
-            - The full prompt + target text is tokenized.
-            - ``labels`` are initialized as a clone of ``input_ids``.
-            - Tokens corresponding to the prompt portion (before
-            ``self._clm_separator``) are masked with -100 so that loss is
-            computed only on the target portion.
-            - Padding tokens are also masked with -100.
-            - The original scalar regression value is returned separately as
-            ``label_values``.
+        Returns the raw prompt text and the sample's label. For multi-task
+        datasets a boolean ``label_mask`` is included so the loss can ignore
+        missing entries. Tokenization is deferred to the collate function.
 
         Parameters
         ----------
@@ -201,8 +139,8 @@ class MoleculeNetDataset(Dataset):
         Returns
         -------
         Dict[str, torch.Tensor]
-            Dict with 'input_ids', 'attention_mask', 'labels', and
-            optionally 'label_mask' (for multi_task tasks).
+            Dict with 'text', 'labels', and optionally 'label_mask'
+            (for multi_task tasks).
 
         Examples
         --------
@@ -223,13 +161,6 @@ class MoleculeNetDataset(Dataset):
         >>> isinstance(sample["text"], str)
         True
         """
-        if self.use_lm_head and self.experiment_type == "regression":
-            return {
-                "text": self.texts[idx],
-                "prompt_text": self._clm_prompt_texts[idx],
-                "label_values": self.label_values[idx],
-            }
-
         item = {
             "text": self.texts[idx],
             "labels": self.labels[idx],
@@ -450,10 +381,6 @@ def make_collate_fn(tokenizer: PreTrainedTokenizerBase, max_len: int):
     ``truncation=True``, so each batch is padded only to its own longest
     sequence rather than a global maximum.
 
-    For CLM regression samples (those with a ``"prompt_text"`` key) the
-    function additionally masks prompt tokens and padding tokens in ``labels``
-    with -100 so that only the answer portion contributes to the loss.
-
     Parameters
     ----------
     tokenizer : PreTrainedTokenizerBase
@@ -467,8 +394,6 @@ def make_collate_fn(tokenizer: PreTrainedTokenizerBase, max_len: int):
         A collate function suitable for ``torch.utils.data.DataLoader``.
     """
     def collate_fn(samples: List[Dict]) -> Dict[str, torch.Tensor]:
-        is_clm_regression = "prompt_text" in samples[0]
-
         texts = [s["text"] for s in samples]
         enc = tokenizer(
             texts,
@@ -479,25 +404,6 @@ def make_collate_fn(tokenizer: PreTrainedTokenizerBase, max_len: int):
         )
         input_ids = enc["input_ids"]
         attention_mask = enc["attention_mask"]
-
-        if is_clm_regression:
-            labels = input_ids.clone()
-            # Mask prompt tokens (per-sample length) and padding tokens with -100
-            prompt_texts = [s["prompt_text"] for s in samples]
-            prompt_enc = tokenizer(
-                prompt_texts,
-                truncation=True,
-                max_length=max_len,
-            )
-            for i, prompt_ids in enumerate(prompt_enc["input_ids"]):
-                labels[i, : len(prompt_ids)] = -100
-            labels[input_ids == tokenizer.pad_token_id] = -100
-            return {
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-                "labels": labels,
-                "label_values": torch.stack([s["label_values"] for s in samples]),
-            }
 
         labels = torch.stack([s["labels"] for s in samples])
         batch = {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}

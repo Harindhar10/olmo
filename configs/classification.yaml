@@ -2,7 +2,6 @@ data_dir: datasets
 
 # Model
 model_name: allenai/OLMo-7B-hf
-use_lm_head: false
 finetune_strategy: qlora
 
 # Training

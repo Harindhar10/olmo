@@ -53,7 +53,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model_name", type=str, default=None)
     parser.add_argument("--finetune_strategy", type=str, choices=["qlora", "lora", "full_finetune"], default=None,
                         help="Finetuning strategy: qlora (4-bit quantized LoRA), lora (LoRA without quantization), full_finetune (all parameters)")
-    parser.add_argument("--use_lm_head", action="store_true", default=None)
 
     # Training
     parser.add_argument("--max_len", type=int, default=None)

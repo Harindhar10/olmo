@@ -72,7 +72,6 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        args.use_lm_head,
     )
     val_ds = MoleculeNetDataset(
         val_df,
@@ -82,7 +81,6 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        args.use_lm_head,
     )
     test_ds = MoleculeNetDataset(
         test_df,
@@ -92,7 +90,6 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         task_config.task_type,
         task_config.experiment_type,
         args.max_len,
-        args.use_lm_head,
     )
 
     log0(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
@@ -115,7 +112,6 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
         model_name=args.model_name,
         num_tasks=len(task_config.task_columns),
         task_type=task_config.task_type,
-        use_lm_head=args.use_lm_head,
         finetune_strategy=args.finetune_strategy,
         lr=args.lr,
         weight_decay=args.weight_decay,
@@ -217,7 +213,6 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
 
     # Train
     log0("Starting training...")
-    log0(f"Model approach: {'LM Head (Yes/No Token)' if args.use_lm_head else 'Classification Head'}")
     log0(f"Finetune strategy: {args.finetune_strategy}")
     trainer.fit(model, train_loader, val_loader)
 

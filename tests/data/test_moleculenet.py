@@ -188,49 +188,4 @@ class TestMoleculeNetErrors:
                 max_len=16,
             )
 
-class TestMoleculeNetCLMRegression:
-    """Tests for MoleculeNetDataset in causal LM regression mode.
-
-    When use_lm_head=True and experiment_type='regression', the dataset
-    embeds the regression target directly in the prompt text and tokenizes
-    lazily per sample. The prompt portion of labels is masked to -100 so
-    the loss is computed only on the response tokens (teacher forcing).
-    """
-
-    def get_sample_dataset(self, load_tokenizer, df=None, **kwargs):
-        if df is None:
-            df = pd.DataFrame({
-                "smiles": ["CC", "CCO", "CCC"],
-                "value": [1.0, 2.0, 3.0],
-            })
-        defaults = dict(
-            task_columns=["value"],
-            prompt="Predict logP.",
-            task_type="regression",
-            experiment_type="regression",
-            use_lm_head=True,
-            max_len=64,
-        )
-        defaults.update(kwargs)
-        return MoleculeNetDataset(df, load_tokenizer, **defaults)
-
-    def test_clm_regression_output_structure(self, load_tokenizer):
-        """Verify that CLM regression samples return the expected keys
-        including label_values, and that prompt tokens are masked in labels.
-
-        Unlike standard regression which returns a scalar label, CLM
-        regression returns full-sequence labels for next-token prediction
-        plus label_values for metric computation. The prompt portion must
-        be masked to -100 so the model is only trained to generate the
-        numeric response, not to memorise the prompt.
-        """
-        ds = self.get_sample_dataset(load_tokenizer)
-        sample = ds[0]
-        assert set(sample.keys()) == {"input_ids", "attention_mask", "labels", "label_values"}
-        assert sample["input_ids"].shape == sample["labels"].shape
-        assert sample["label_values"].dtype == torch.float32
-        # Prompt tokens should be masked
-        assert (sample["labels"] == -100).any(), "prompt/padding tokens should be masked"
-        # At least some response tokens should NOT be masked
-        assert (sample["labels"] != -100).any(), "response tokens should not be masked"
 
