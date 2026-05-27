@@ -170,38 +170,28 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     )
 
 
-    num_devices = torch.cuda.device_count() or 1
-
+    if args.finetune_strategy == 'qlora':
+        strategy = 'ddp'
+    else:
+        strategy = fsdp_strategy
+        
     # Trainer
-    # trainer = pl.Trainer(
-    #     max_epochs=args.epochs,
-    #     accelerator="gpu",
-    #     devices=-1,
-    #     strategy="ddp",
-    #     precision="16-mixed",
-    #     gradient_clip_val=args.max_grad_norm,
-    #     accumulate_grad_batches=args.gradient_accum,
-    #     callbacks=callbacks,
-    #     logger=True,
-    #     log_every_n_steps=10,
-    #     deterministic=True,
-    #     enable_progress_bar=True,
-    # )
     
     trainer = pl.Trainer(
-        accelerator="gpu",
-        devices=torch.cuda.device_count(),
-        strategy=fsdp_strategy,
-        precision="bf16-mixed",
         max_epochs=args.epochs,
+        accelerator="gpu",
+        devices=-1,
+        strategy=strategy,
+        precision="bf16-mixed",
         accumulate_grad_batches=args.gradient_accum,
-        log_every_n_steps=1,
-        callbacks=callbacks,
         val_check_interval=args.val_check_interval,
+        callbacks=callbacks,
         logger=wandb_logger,
+        log_every_n_steps=1,
         enable_progress_bar=True,
         enable_model_summary=True
-        )
+    )
+
 
     # Train
     log0("Starting training...")
@@ -223,8 +213,18 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
 
     # Cleanup GPU memory for next task
     del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    model = OLMoRegressor.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    best_ckpt = trainer.checkpoint_callback.best_model_path
+    if args.finetune_strategy == "qlora":
+        # DDP path: the checkpoint's tensors were saved on cuda:0, so the default
+        # map_location makes every rank restore the full model onto GPU 0 -> OOM.
+        # Stage on CPU; trainer.test moves it to each rank's own GPU.
+        model = OLMoRegressor.load_from_checkpoint(best_ckpt, map_location="cpu")
+    else:
+        model = OLMoRegressor.load_from_checkpoint(best_ckpt)
 
     test_results = trainer.test(model, test_loader)
 

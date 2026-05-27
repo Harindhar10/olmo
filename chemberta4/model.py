@@ -276,7 +276,8 @@ class RegressionHead(nn.Module):
         """
         super().__init__()
         self.backbone = backbone
-        self.regressor = nn.Linear(backbone.config.hidden_size, 1, dtype=torch.bfloat16)
+        hidden_size = get_hidden_size(backbone.config)
+        self.regressor = nn.Linear(hidden_size, 1, dtype=torch.bfloat16)
 
         # Initialize with small weights
         nn.init.normal_(self.regressor.weight, mean=0.0, std=0.02)
@@ -341,3 +342,14 @@ class RegressionHead(nn.Module):
             loss = torch.sqrt(nn.functional.mse_loss(preds, labels) + 1e-6)
 
         return preds, loss
+
+
+def get_hidden_size(config):
+    if hasattr(config, "hidden_size"):
+        return config.hidden_size
+    if hasattr(config, "hidden_dim"):
+        return config.hidden_dim
+    if hasattr(config, "text_config") and hasattr(config.text_config, "hidden_size"):
+        return config.text_config.hidden_size
+
+    raise AttributeError(f"Could not find hidden size in config: {config}")

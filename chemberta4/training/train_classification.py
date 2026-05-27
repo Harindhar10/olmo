@@ -194,7 +194,7 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     #     enable_progress_bar=True,
     #     enable_model_summary=True,
     # )
-    
+
     trainer = pl.Trainer(
     accelerator="gpu",
     devices=torch.cuda.device_count(),
@@ -226,8 +226,18 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
 
     # Cleanup GPU memory for next task
     del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    model = OLMoClassifier.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    best_ckpt = trainer.checkpoint_callback.best_model_path
+    if args.finetune_strategy == "qlora":
+        # DDP path: the checkpoint's tensors were saved on cuda:0, so the default
+        # map_location makes every rank restore the full model onto GPU 0 -> OOM.
+        # Stage on CPU; trainer.test moves it to each rank's own GPU.
+        model = OLMoClassifier.load_from_checkpoint(best_ckpt, map_location="cpu")
+    else:
+        model = OLMoClassifier.load_from_checkpoint(best_ckpt)
 
     test_results = trainer.test(model, test_loader)
 

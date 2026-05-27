@@ -161,16 +161,27 @@ class OLMoClassifier(pl.LightningModule):
             )
 
 
-        base = AutoModel.from_pretrained(
+        if hp.finetune_strategy != 'qlora':
+            base = AutoModel.from_pretrained(
+                hp.model_name,
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                use_cache=False,
+                low_cpu_mem_usage=True,
+                device_map=None,
+                attn_implementation="flash_attention_2"
+            )
+        else:
+            base = AutoModel.from_pretrained(
             hp.model_name,
-            torch_dtype=torch.bfloat16,
             quantization_config = bnb_config,
+            torch_dtype=torch.bfloat16,
             trust_remote_code=True,
             use_cache=False,
             low_cpu_mem_usage=True,
             device_map=None,
-            attn_implementation="flash_attention_2"
-        )
+            attn_implementation="flash_attention_2")
+            
 
         if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(
@@ -460,24 +471,41 @@ class OLMoRegressor(pl.LightningModule):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
             )
 
+
+        #torch_dtype=torch.bfloat16,
+        #use_cache=False,
+        #attn_implementation="flash_attention_2"
+
+
+        if hp.finetune_strategy != 'qlora':
+            base = AutoModel.from_pretrained(
+                hp.model_name,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+                device_map=None,
+                attn_implementation="flash_attention_2"
+            )
             
-        base = AutoModel.from_pretrained(
+        # use_cache=False,
+        # attn_implementation="flash_attention_2"
+        # torch_dtype=torch.bfloat16,
+
+        else:
+            base = AutoModel.from_pretrained(
             hp.model_name,
-            torch_dtype=torch.bfloat16,
             quantization_config = bnb_config,
             trust_remote_code=True,
-            use_cache=False,
             low_cpu_mem_usage=True,
             device_map=None,
             attn_implementation="flash_attention_2")
 
-
         if hp.finetune_strategy == "qlora":
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
+    
         if hp.finetune_strategy != "full_finetune":
             lora_cfg = LoraConfig(
                 r=hp.lora_r,
