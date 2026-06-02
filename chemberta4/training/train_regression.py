@@ -1,4 +1,5 @@
 import gc
+import os
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -25,13 +26,97 @@ import pytorch_lightning as pl
 from pytorch_lightning.strategies import FSDPStrategy
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch.distributed.fsdp.wrap import lambda_auto_wrap_policy
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from torchmetrics import Accuracy, AUROC
 
-from transformers.models.olmo.modeling_olmo import OlmoDecoderLayer
+
+def _is_transformer_layer(module) -> bool:
+    """Model-agnostic match for a transformer decoder block.
+
+    Matches OLMo, Qwen, Llama, etc. (including trust_remote_code classes like
+    Qwen3_5DecoderLayer) by class-name suffix, so the FSDP wrap / activation
+    checkpointing policy follows whatever ``--model_name`` is used rather than
+    being pinned to a single architecture.
+    """
+    return module.__class__.__name__.endswith("DecoderLayer")
+
+
+class QLoRAAdapterCheckpoint(pl.Callback):
+    """Save only the PEFT adapter and regression head for the best validation score."""
+
+    def __init__(self, monitor: str, mode: str, dirpath: str):
+        super().__init__()
+        if mode not in {"min", "max"}:
+            raise ValueError(f"mode must be 'min' or 'max', got {mode!r}")
+
+        self.monitor = monitor
+        self.mode = mode
+        self.best_model_score = None
+        self.best_adapter_path = os.path.abspath(
+            os.path.join(dirpath, "best_qlora_adapter")
+        )
+
+    def on_fit_start(self, trainer: pl.Trainer, pl_module: OLMoRegressor) -> None:
+        # DDP subprocesses can construct this callback at slightly different
+        # times, which gives each rank a different timestamped output path.
+        # Rank 0 owns the save path; every other rank must reuse it for eval.
+        self.best_adapter_path = trainer.strategy.broadcast(self.best_adapter_path, 0)
+        if trainer.is_global_zero:
+            log0(f"QLoRA adapter checkpoint path: {self.best_adapter_path}")
+
+    def _is_better(self, current: torch.Tensor) -> bool:
+        if self.best_model_score is None:
+            return True
+        if self.mode == "min":
+            return current < self.best_model_score
+        return current > self.best_model_score
+
+    def on_validation_end(self, trainer: pl.Trainer, pl_module: OLMoRegressor) -> None:
+        if trainer.sanity_checking:
+            return
+
+        current = trainer.callback_metrics.get(self.monitor)
+        if current is None:
+            return
+
+        current = current.detach().float().cpu()
+        if not self._is_better(current):
+            return
+
+        self.best_model_score = current
+        if trainer.is_global_zero:
+            self._save_adapter(pl_module)
+            log0(
+                f"Saved best QLoRA adapter to {self.best_adapter_path} "
+                f"({self.monitor}={current.item():.4f})"
+            )
+        trainer.strategy.barrier("qlora_adapter_checkpoint")
+
+    def _save_adapter(self, pl_module: OLMoRegressor) -> None:
+        os.makedirs(self.best_adapter_path, exist_ok=True)
+
+        backbone = pl_module.model.backbone
+        backbone.save_pretrained(self.best_adapter_path)
+
+        if pl_module.tokenizer is not None:
+            pl_module.tokenizer.save_pretrained(self.best_adapter_path)
+
+        regressor_state = {
+            name: tensor.detach().cpu()
+            for name, tensor in pl_module.model.regressor.state_dict().items()
+        }
+        torch.save(
+            {
+                "regressor": regressor_state,
+                "monitor": self.monitor,
+                "mode": self.mode,
+                "score": self.best_model_score.item(),
+            },
+            os.path.join(self.best_adapter_path, "regressor.pt"),
+        )
 
 
 def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
@@ -118,15 +203,27 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
 
     # Callbacks
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    callbacks = [
-        LearningRateMonitor(logging_interval="step"),
-        ModelCheckpoint(
+    run_output_dir = f"{args.output_dir}/{task_name}/{timestamp}"
+    qlora_checkpoint = None
+    if args.finetune_strategy == "qlora":
+        qlora_checkpoint = QLoRAAdapterCheckpoint(
+            monitor=task_config.monitor_metric,
+            mode=task_config.monitor_mode,
+            dirpath=run_output_dir,
+        )
+        checkpoint_callback = qlora_checkpoint
+    else:
+        checkpoint_callback = ModelCheckpoint(
             monitor=task_config.monitor_metric,
             mode=task_config.monitor_mode,
             save_top_k=1,
             save_weights_only=True,
             verbose=True,
-        ),
+        )
+
+    callbacks = [
+        LearningRateMonitor(logging_interval="step"),
+        checkpoint_callback,
     ]
 
         # EarlyStopping(
@@ -155,15 +252,18 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     # FSDP Strategy
     # ----------------------------
     auto_wrap_policy = partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={OlmoDecoderLayer}
+        lambda_auto_wrap_policy,
+        lambda_fn=_is_transformer_layer,
     )
 
     
     fsdp_strategy = FSDPStrategy(
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
-        activation_checkpointing_policy=auto_wrap_policy,
+        # No activation checkpointing: the qwen3_5 modeling code rebuilds its
+        # causal mask with a doubled KV length on recompute, so its forward is
+        # not reproducible under checkpointing. SMILES sequences are short, so
+        # FULL_SHARD param sharding alone keeps memory in budget.
         cpu_offload=False,
         use_orig_params=True,
         sync_module_states=True,
@@ -182,12 +282,16 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
         accelerator="gpu",
         devices=-1,
         strategy=strategy,
+        # bf16-true casts the whole module to bf16 so FSDP's flatten group is
+        # uniform (vs bf16-mixed which keeps fp32 master params alongside the
+        # bf16-storage quantized base, reintroducing the dtype mismatch).
         precision="bf16-mixed",
         accumulate_grad_batches=args.gradient_accum,
         val_check_interval=args.val_check_interval,
         callbacks=callbacks,
         logger=wandb_logger,
         log_every_n_steps=1,
+        enable_checkpointing=args.finetune_strategy != "qlora",
         enable_progress_bar=True,
         enable_model_summary=True
     )
@@ -200,16 +304,11 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     #log0("Running test evaluation...")
     # trainer.test(model, test_loader)
 
-
-    checkpoint_callback = [c for c in callbacks if isinstance(c, ModelCheckpoint)][0]
-    log0(f"Done! Best validation ROC AUC: {checkpoint_callback.best_model_score:.4f}")
-
-    if args.delete_checkpoint:
-        import shutil
-
-        checkpoint_dir = f"{args.output_dir}/{task_name}/{timestamp}"
-        shutil.rmtree(checkpoint_dir, ignore_errors=True)
-        log0(f"Deleted checkpoint directory: {checkpoint_dir}")
+    best_score = checkpoint_callback.best_model_score
+    if best_score is None:
+        log0("Done! No best validation score was recorded.")
+    else:
+        log0(f"Done! Best validation score: {float(best_score):.4f}")
 
     # Cleanup GPU memory for next task
     del model
@@ -217,13 +316,36 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    best_ckpt = trainer.checkpoint_callback.best_model_path
     if args.finetune_strategy == "qlora":
-        # DDP path: the checkpoint's tensors were saved on cuda:0, so the default
-        # map_location makes every rank restore the full model onto GPU 0 -> OOM.
-        # Stage on CPU; trainer.test moves it to each rank's own GPU.
-        model = OLMoRegressor.load_from_checkpoint(best_ckpt, map_location="cpu")
+        best_adapter_path = qlora_checkpoint.best_adapter_path
+        if qlora_checkpoint.best_model_score is None:
+            raise RuntimeError(
+                f"No QLoRA adapter was saved because monitor {task_config.monitor_metric!r} "
+                "was never logged during validation."
+            )
+
+        log0(f"Loading base model and applying QLoRA adapter from: {best_adapter_path}")
+        adapter_config_path = os.path.join(best_adapter_path, "adapter_config.json")
+        if not os.path.exists(adapter_config_path):
+            raise FileNotFoundError(
+                f"Missing QLoRA adapter config at {adapter_config_path}. "
+                "Check that all DDP ranks are using rank 0's adapter path."
+            )
+
+        model = OLMoRegressor(
+            model_name=args.model_name,
+            finetune_strategy=args.finetune_strategy,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            warmup_ratio=args.warmup_ratio,
+            lora_r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            adapter_path=best_adapter_path,
+            regressor_path=os.path.join(best_adapter_path, "regressor.pt"),
+        )
     else:
+        best_ckpt = trainer.checkpoint_callback.best_model_path
         model = OLMoRegressor.load_from_checkpoint(best_ckpt)
 
     test_results = trainer.test(model, test_loader)
@@ -238,13 +360,11 @@ def run_regression_experiment(args: SimpleNamespace, task_name: str) -> None:
     if args.delete_checkpoint:
         import shutil
 
-        checkpoint_dir = f"{args.output_dir}/{task_name}/{timestamp}"
-        shutil.rmtree(checkpoint_dir, ignore_errors=True)
-        log0(f"Deleted checkpoint directory: {checkpoint_dir}")
+        shutil.rmtree(run_output_dir, ignore_errors=True)
+        log0(f"Deleted checkpoint directory: {run_output_dir}")
 
     del trainer
 
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-

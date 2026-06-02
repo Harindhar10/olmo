@@ -29,13 +29,22 @@ import pytorch_lightning as pl
 from pytorch_lightning.strategies import FSDPStrategy
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from torch.distributed.fsdp.wrap import lambda_auto_wrap_policy
 from torch.distributed.fsdp import ShardingStrategy
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from torchmetrics import Accuracy, AUROC
 
-from transformers.models.olmo.modeling_olmo import OlmoDecoderLayer
+
+def _is_transformer_layer(module) -> bool:
+    """Model-agnostic match for a transformer decoder block.
+
+    Matches OLMo, Qwen, Llama, etc. (including trust_remote_code classes like
+    Qwen3_5DecoderLayer) by class-name suffix, so the FSDP wrap / activation
+    checkpointing policy follows whatever ``--model_name`` is used rather than
+    being pinned to a single architecture.
+    """
+    return module.__class__.__name__.endswith("DecoderLayer")
 
 
 
@@ -162,15 +171,18 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     # FSDP Strategy
     # ----------------------------
     auto_wrap_policy = partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={OlmoDecoderLayer}
+        lambda_auto_wrap_policy,
+        lambda_fn=_is_transformer_layer,
     )
 
 
     fsdp_strategy = FSDPStrategy(
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         auto_wrap_policy=auto_wrap_policy,
-        activation_checkpointing_policy=auto_wrap_policy,
+        # No activation checkpointing: the qwen3_5 modeling code rebuilds its
+        # causal mask with a doubled KV length on recompute, so its forward is
+        # not reproducible under checkpointing. SMILES sequences are short, so
+        # FULL_SHARD param sharding alone keeps memory in budget.
         cpu_offload=False,
         use_orig_params=True,
         sync_module_states=True,
@@ -199,7 +211,10 @@ def run_classification_experiment(args: SimpleNamespace, task_name: str) -> None
     accelerator="gpu",
     devices=torch.cuda.device_count(),
     strategy=fsdp_strategy,
-    precision="bf16-mixed",
+    # bf16-true casts the whole module to bf16 so FSDP's flatten group is uniform
+    # (vs bf16-mixed which keeps fp32 master params alongside the bf16-storage
+    # quantized base, reintroducing the dtype mismatch).
+    precision="bf16-true",
     max_epochs=args.epochs,
     accumulate_grad_batches=args.gradient_accum,
     log_every_n_steps=1,

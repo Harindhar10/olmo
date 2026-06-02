@@ -17,12 +17,12 @@ from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
 from torchmetrics import Accuracy, AUROC
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from chemberta4.model import ClassificationHead, RegressionHead
-from chemberta4.utils import get_device_map
+from chemberta4.utils import get_device_map, log0
 
 
 class OLMoClassifier(pl.LightningModule):
@@ -156,8 +156,10 @@ class OLMoClassifier(pl.LightningModule):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
+                # See OLMoRegressor: bf16 storage keeps FSDP's flatten group uniform.
+                bnb_4bit_quant_storage=torch.bfloat16,
             )
 
 
@@ -181,17 +183,26 @@ class OLMoClassifier(pl.LightningModule):
             low_cpu_mem_usage=True,
             device_map=None,
             attn_implementation="flash_attention_2")
-            
+
 
         if hp.finetune_strategy == "qlora":
+            # Activation checkpointing is disabled (qwen3_5's forward is not
+            # reproducible under recompute), so keep HF gradient checkpointing
+            # off here as well.
             base = prepare_model_for_kbit_training(
-                base, use_gradient_checkpointing=True
+                base, use_gradient_checkpointing=False
             )
         if hp.finetune_strategy != "full_finetune":
             lora_cfg = LoraConfig(
                 r=hp.lora_r,
                 lora_alpha=hp.lora_alpha,
-                target_modules=["q_proj", "k_proj", "v_proj"],
+                target_modules=["q_proj",
+                                "k_proj", 
+                                "v_proj", 
+                                "o_proj",  
+                                "gate_proj",
+                                "up_proj",
+                                "down_proj",],
                 lora_dropout=hp.lora_dropout,
                 bias="none",
                 task_type="FEATURE_EXTRACTION",
@@ -351,15 +362,45 @@ class OLMoClassifier(pl.LightningModule):
         """
         hp = self.hparams
 
+        # Source parameters from the FSDP-wrapped root. After FSDP wrapping
+        # (with use_orig_params=True) the wrapped root is what exposes the
+        # original LoRA params with requires_grad intact; the inner self.model
+        # attribute can report them as frozen.
+        param_source = self.model
+        if getattr(self, "trainer", None) is not None and self.trainer.model is not None:
+            param_source = self.trainer.model
+
         # Separate params for weight decay
         decay_params = []
         no_decay_params = []
-        for name, param in self.model.named_parameters():
+        for name, param in param_source.named_parameters():
             if param.requires_grad:
                 if "bias" in name or "layer_norm" in name.lower():
                     no_decay_params.append(param)
                 else:
                     decay_params.append(param)
+
+        # Authoritative trainable-param count (what AdamW actually optimizes).
+        # The Lightning ModelSummary "Trainable params" line is unreliable under
+        # FSDP + 4-bit quantization, so log the real numbers here.
+        n_tensors = len(decay_params) + len(no_decay_params)
+        n_params = sum(p.numel() for p in decay_params + no_decay_params)
+        all_named = list(param_source.named_parameters())
+        n_all = sum(p.numel() for _, p in all_named)
+        log0(
+            f"[optimizer] params seen={len(all_named)} ({n_all:,}); "
+            f"trainable tensors={n_tensors}, trainable params={n_params:,}"
+        )
+        for name, p in all_named[:6]:
+            log0(
+                f"[optimizer]   sample {name}: requires_grad={p.requires_grad}, "
+                f"dtype={p.dtype}, numel={p.numel():,}"
+            )
+        if n_params == 0:
+            raise RuntimeError(
+                "No trainable parameters found for the optimizer — LoRA adapters / "
+                "head are not trainable. Check finetune_strategy and LoRA target_modules."
+            )
 
         optimizer = torch.optim.AdamW(
             [
@@ -424,6 +465,8 @@ class OLMoRegressor(pl.LightningModule):
         lora_r: int = 32,
         lora_alpha: int = 64,
         lora_dropout: float = 0.05,
+        adapter_path: Optional[str] = None,
+        regressor_path: Optional[str] = None,
     ):
         """Initialise OLMoRegressor.
 
@@ -445,6 +488,10 @@ class OLMoRegressor(pl.LightningModule):
             LoRA alpha.
         lora_dropout : float
             LoRA dropout rate.
+        adapter_path : str, optional
+            Path to a saved PEFT adapter to attach to the base model.
+        regressor_path : str, optional
+            Path to the saved regression-head state dict.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -473,55 +520,71 @@ class OLMoRegressor(pl.LightningModule):
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
+                # FSDP flattens each unit's params into one FlatParameter and
+                # requires a uniform dtype. The default 4-bit storage is uint8,
+                # which clashes with the bf16 LoRA/head params. Packing the 4-bit
+                # weights in a bf16 container keeps the whole flatten group bf16.
+                bnb_4bit_quant_storage=torch.bfloat16,
             )
-
-
-        #torch_dtype=torch.bfloat16,
-        #use_cache=False,
-        #attn_implementation="flash_attention_2"
 
 
         if hp.finetune_strategy != 'qlora':
             base = AutoModel.from_pretrained(
                 hp.model_name,
+                torch_dtype=torch.bfloat16,
                 trust_remote_code=True,
                 low_cpu_mem_usage=True,
                 device_map=None,
                 attn_implementation="flash_attention_2"
             )
-            
-        # use_cache=False,
-        # attn_implementation="flash_attention_2"
-        # torch_dtype=torch.bfloat16,
 
         else:
             base = AutoModel.from_pretrained(
             hp.model_name,
             quantization_config = bnb_config,
+            torch_dtype=torch.bfloat16,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
             device_map=None,
-            attn_implementation="flash_attention_2")
+            attn_implementation="sdpa")
 
         if hp.finetune_strategy == "qlora":
+            # Activation checkpointing is disabled (qwen3_5's forward is not
+            # reproducible under recompute), so keep HF gradient checkpointing
+            # off here as well.
             base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
-    
+
         if hp.finetune_strategy != "full_finetune":
-            lora_cfg = LoraConfig(
-                r=hp.lora_r,
-                lora_alpha=hp.lora_alpha,
-                target_modules=["q_proj", "k_proj", "v_proj"],
-                lora_dropout=hp.lora_dropout,
-                bias="none",
-                task_type="FEATURE_EXTRACTION",
-            )
-            base = get_peft_model(base, lora_cfg)
+            if hp.adapter_path:
+                base = PeftModel.from_pretrained(
+                    base,
+                    hp.adapter_path,
+                    is_trainable=False,
+                )
+            else:
+                lora_cfg = LoraConfig(
+                    r=hp.lora_r,
+                    lora_alpha=hp.lora_alpha,
+                    target_modules=["q_proj",
+                                    "k_proj", 
+                                    "v_proj", 
+                                    "o_proj",],
+                    lora_dropout=hp.lora_dropout,
+                    bias="none",
+                    task_type="FEATURE_EXTRACTION",
+                )
+                base = get_peft_model(base, lora_cfg)
 
-        # if self.global_rank == 0:
-        #     base.print_trainable_parameters()
-
+            if self.global_rank == 0 and not hp.adapter_path:
+                # PEFT's own count, taken before FSDP wraps (authoritative).
+                base.print_trainable_parameters()
 
         self.model = RegressionHead(base)
+        if hp.regressor_path:
+            regressor_state = torch.load(hp.regressor_path, map_location="cpu")
+            if "regressor" in regressor_state:
+                regressor_state = regressor_state["regressor"]
+            self.model.regressor.load_state_dict(regressor_state)
 
     def forward(
         self,
@@ -641,14 +704,50 @@ class OLMoRegressor(pl.LightningModule):
         """
         hp = self.hparams
 
+        # decay_params = []
+        # no_decay_params = []
+        # for name, param in self.model.named_parameters():
+        #     if param.requires_grad:
+        #         if "bias" in name or "layer_norm" in name.lower():
+        #             no_decay_params.append(param)
+        #         else:
+        #             decay_params.append(param)
+        
+        
+        # Source parameters from the FSDP-wrapped root. After FSDP wrapping
+        # (with use_orig_params=True) the wrapped root is what exposes the
+        # original LoRA params with requires_grad intact; the inner self.model
+        # attribute can report them as frozen.
+        param_source = self.model
+        # if getattr(self, "trainer", None) is not None and self.trainer.model is not None:
+        #     param_source = self.trainer.model
+
+        # Separate params for weight decay
         decay_params = []
         no_decay_params = []
-        for name, param in self.model.named_parameters():
+        for name, param in param_source.named_parameters():
+            # print('Iterating through params')
             if param.requires_grad:
+                # print('Printing params with requires grad', name)
                 if "bias" in name or "layer_norm" in name.lower():
                     no_decay_params.append(param)
                 else:
                     decay_params.append(param)
+
+        # Authoritative trainable-param count (what AdamW actually optimizes).
+        # The Lightning ModelSummary "Trainable params" line is unreliable under
+        # FSDP + 4-bit quantization, so log the real numbers here.
+        # print('decay_params', decay_params)
+        # print('no_decay_params', no_decay_params)
+        n_tensors = len(decay_params) + len(no_decay_params)
+        # print('Number of tensors', n_tensors)
+        n_params = sum(p.numel() for p in decay_params + no_decay_params)
+        log0(f"[optimizer] trainable tensors={n_tensors}, trainable params={n_params:,}")
+        if n_params == 0:
+            raise RuntimeError(
+                "No trainable parameters found for the optimizer — LoRA adapters / "
+                "head are not trainable. Check finetune_strategy and LoRA target_modules."
+            )
 
         optimizer = torch.optim.AdamW(
             [
