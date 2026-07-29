@@ -546,7 +546,7 @@ class OLMoRegressor(pl.LightningModule):
             trust_remote_code=True,
             low_cpu_mem_usage=True,
             device_map=None,
-            attn_implementation="sdpa")
+            attn_implementation="flash_attention_2")
 
         if hp.finetune_strategy == "qlora":
             # Activation checkpointing is disabled (qwen3_5's forward is not
