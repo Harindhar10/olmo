@@ -212,7 +212,7 @@ class OLMoClassifier(pl.LightningModule):
             # if self.global_rank == 0:
             #     base.print_trainable_parameters()
 
-            self.model = ClassificationHead(base, hp.num_tasks, hp.task_type)
+        self.model = ClassificationHead(base, hp.num_tasks, hp.task_type)
 
     def forward(
         self,
