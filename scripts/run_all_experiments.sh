@@ -14,17 +14,17 @@ WANDB_KEY="wandb_v1_VPl71MIBf878FUYq6LfHTlKUNQZ_sLR8kqy3y3kYQUQU9Lbwi1GbG4ic5fqR
 
 # dataset:batch_size:epochs, per the config table.
 RUNS=(
-  "clintox:8:5"
-  "sider:8:5"
-  "hiv:128:3"
-  "tox21:24:5"
-  "lipo:32:5"
+  "bbbp:8:5"
+  "bace_classification:16:5"
   "freesolv:8:5"
   "delaney:16:5"
   "bace_regression:8:5"
+  "sider:8:5"
+  "tox21:24:5"
   "clearance:8:5"
-  "bbbp:8:5"
-  "bace_classification:16:5"
+  "clintox:8:5"
+  "lipo:32:5"
+  "hiv:128:3"
 )
 
 for run in "${RUNS[@]}"; do
